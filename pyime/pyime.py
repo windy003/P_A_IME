@@ -163,6 +163,7 @@ _UIA_TextPattern2Id = 10024
 _TextUnit_Character = 0
 _CLSID_CUIAutomation = "{ff48dba4-60ef-4201-aa87-54103eef594e}"
 _IID_IUIAutomation = "{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}"
+_IID_IUIAutomation2 = "{34723aff-0c9d-49d0-9896-7ab52df8cd8a}"
 _IID_IUIAutomationTextPattern = "{32eba289-3583-42c9-9c59-3b6d9a1e9b6a}"
 _IID_IUIAutomationTextPattern2 = "{506a921a-fcc9-409f-b23b-37eb74106872}"
 
@@ -206,6 +207,22 @@ def _uia_init():
             ctypes.byref(clsid), None, _CLSCTX_INPROC_SERVER,
             ctypes.byref(iid), ctypes.byref(p))
         _uia = p
+        try:
+            # IUIAutomation2(Win8+):缩短跨进程调用超时。个别程序(如有道词典
+            # 的 Chromium 界面)UIA 响应极慢,不限时会把调用线程卡住数秒
+            iid2 = _guid(_IID_IUIAutomation2)
+            p2 = ctypes.c_void_p()
+            hr = _com_call(p, 0, ctypes.c_long,  # IUnknown::QueryInterface
+                           (ctypes.POINTER(_GUID), ctypes.byref(iid2)),
+                           (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(p2)))
+            if hr == 0 and p2.value:
+                # IUIAutomation2::put_ConnectionTimeout —— vtable[61](毫秒)
+                _com_call(p2, 61, ctypes.c_long, (wt.DWORD, 1000))
+                # IUIAutomation2::put_TransactionTimeout —— vtable[63](毫秒)
+                _com_call(p2, 63, ctypes.c_long, (wt.DWORD, 1000))
+                _com_call(p2, 2, ctypes.c_ulong)  # Release
+        except Exception:
+            pass
         print("[PyIME] UI Automation 已就绪(支持 Chrome/Electron 等程序光标跟随)")
     except Exception as e:
         _uia = None
@@ -349,6 +366,11 @@ def uia_caret():
         oleaut32.VariantClear(ctypes.byref(var))
         if rect and (rect[2] > 0 or rect[3] > 0):
             left, top, _w, h = rect
+            # 拿不到真实光标时(如有道词典的 Chromium 页面),焦点元素往往是
+            # 整个文档/窗口,矩形底边就是窗口底部,毫无定位意义;
+            # 只有看起来像单行输入框的小矩形才可信,否则退回鼠标位置
+            if h > 100:
+                return None
             return int(left), int(top + h) + 2
         return None
     except Exception:
@@ -583,7 +605,7 @@ class Engine:
         self.quote_s = True  # 下一个单引号是否为左引号
         self.quote_d = True
         self.shift_tap = False  # Shift 按下且尚无其他键 → 抬起时切换模式
-        self.pos = None      # 本次组词的候选框落点(组词开始时取一次,避免逐键查 UIA)
+        self.posgen = 0      # 定位代数:上屏/清空后 +1,UI 线程据此重新取候选框落点
         self.tray = None     # 系统托盘图标(托盘创建后回填),用于切换时刷新 中/英
 
     # ---------- UI 通知 ----------
@@ -600,20 +622,19 @@ class Engine:
         self.page = max(0, min(self.page, total - 1))
         items = self.cands[self.page * PAGE_SIZE:(self.page + 1) * PAGE_SIZE]
         disp = ["%d.%s" % (i + 1, w) for i, (w, _n) in enumerate(items)]
-        if self.pos is None:
-            self.pos = caret_pos()  # 组词期间目标光标不动,定位一次即可
-        x, y = self.pos
-        self.q.put(("show", "'".join(self.segs), disp, self.page + 1, total, x, y))
+        # 定位放到 UI 线程做:UIA 跨进程调用可能阻塞几百毫秒(如有道词典的
+        # Chromium 界面),在钩子线程里做会超时,按键被系统直接放行
+        self.q.put(("show", "'".join(self.segs), disp, self.page + 1, total, self.posgen))
 
     def commit(self, text):
         n = send_text(text)
-        self.pos = None  # 上屏后目标光标移动了,下次重新定位
+        self.posgen += 1  # 上屏后目标光标移动了,下次重新定位
         print("[PyIME] 上屏 %r,SendInput=%d" % (text, n))
 
     def clear(self):
         self.buf = ""
         self.cands = []
-        self.pos = None
+        self.posgen += 1
         self.q.put(("hide",))
 
     def toggle(self):
@@ -1105,19 +1126,24 @@ def run_ui(ui_q, hook_thread):
         w.update_idletasks()
         user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
 
+    pos_cache = (None, (0, 0))  # (定位代数, 落点):组词期间光标不动,每代只查一次
+
     def poll():
+        nonlocal pos_cache
         try:
             while True:
                 msg = ui_q.get_nowait()
                 kind = msg[0]
                 if kind == "show":
-                    _, comp, cands, page, pages, x, y = msg
+                    _, comp, cands, page, pages, gen = msg
                     lbl_comp.config(text=comp)
                     txt = "  ".join(cands) if cands else "(无候选,回车上屏字母)"
                     if pages > 1:
                         txt += "   %d/%d" % (page, pages)
                     lbl_cand.config(text=txt)
-                    place_show(win, hwnd_win, x, y)
+                    if pos_cache[0] != gen:
+                        pos_cache = (gen, caret_pos())
+                    place_show(win, hwnd_win, *pos_cache[1])
                 elif kind == "hide":
                     user32.ShowWindow(hwnd_win, SW_HIDE)
                 elif kind == "quit":
