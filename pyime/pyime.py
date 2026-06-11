@@ -1197,7 +1197,7 @@ def main():
     engine = Engine(dic, ui_q)
     hook = HookThread(engine)
     hook.start()
-    print(__doc__.split("按键:")[1].join(["[PyIME] 已启动,当前为中文模式。按键:", ""]))
+    print("[PyIME] 已启动,当前为中文模式。")
     run_ui(ui_q, hook)
 
 
