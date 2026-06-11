@@ -164,14 +164,24 @@ oleaut32.SafeArrayAccessData.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.
 oleaut32.SafeArrayAccessData.restype = ctypes.c_long
 oleaut32.SafeArrayUnaccessData.argtypes = (ctypes.c_void_p,)
 oleaut32.SafeArrayUnaccessData.restype = ctypes.c_long
+oleaut32.SafeArrayGetUBound.argtypes = (ctypes.c_void_p, ctypes.c_uint,
+                                        ctypes.POINTER(ctypes.c_long))
+oleaut32.SafeArrayGetUBound.restype = ctypes.c_long
+oleaut32.SafeArrayDestroy.argtypes = (ctypes.c_void_p,)
+oleaut32.SafeArrayDestroy.restype = ctypes.c_long
 oleaut32.VariantClear.argtypes = (ctypes.c_void_p,)
 oleaut32.VariantClear.restype = ctypes.c_long
 _COINIT_APARTMENTTHREADED = 0x2
 _CLSCTX_INPROC_SERVER = 1
 _VT_ARRAY_R8 = 0x2005  # VT_ARRAY | VT_R8
 _UIA_BoundingRectanglePropertyId = 30001
+_UIA_TextPatternId = 10014
+_UIA_TextPattern2Id = 10024
+_TextUnit_Character = 0
 _CLSID_CUIAutomation = "{ff48dba4-60ef-4201-aa87-54103eef594e}"
 _IID_IUIAutomation = "{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}"
+_IID_IUIAutomationTextPattern = "{32eba289-3583-42c9-9c59-3b6d9a1e9b6a}"
+_IID_IUIAutomationTextPattern2 = "{506a921a-fcc9-409f-b23b-37eb74106872}"
 
 
 class _GUID(ctypes.Structure):
@@ -219,8 +229,114 @@ def _uia_init():
         print("[PyIME] UI Automation 不可用,退回鼠标定位:", e)
 
 
+def _range_rect(rng):
+    """IUIAutomationTextRange::GetBoundingRectangles 的第一个矩形
+    (left, top, width, height),没有矩形返回 None。"""
+    psa = ctypes.c_void_p()
+    # IUIAutomationTextRange::GetBoundingRectangles —— vtable[10]
+    hr = _com_call(rng, 10, ctypes.c_long,
+                   (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(psa)))
+    if hr != 0 or not psa.value:
+        return None
+    try:
+        ub = ctypes.c_long(-1)
+        if oleaut32.SafeArrayGetUBound(psa, 1, ctypes.byref(ub)) != 0 or ub.value < 3:
+            return None  # 退化(空)区间没有矩形
+        data = ctypes.c_void_p()
+        if oleaut32.SafeArrayAccessData(psa, ctypes.byref(data)) != 0:
+            return None
+        d = ctypes.cast(data, ctypes.POINTER(ctypes.c_double))
+        rect = (d[0], d[1], d[2], d[3])
+        oleaut32.SafeArrayUnaccessData(psa)
+        return rect if (rect[2] > 0 or rect[3] > 0) else None
+    finally:
+        oleaut32.SafeArrayDestroy(psa)
+
+
+def _caret_from_range(rng):
+    """文本区间 → 候选框落点;空区间先扩展到一个字符再取矩形。"""
+    rect = _range_rect(rng)
+    if rect is None:
+        # IUIAutomationTextRange::ExpandToEnclosingUnit —— vtable[6]
+        _com_call(rng, 6, ctypes.c_long, (ctypes.c_long, _TextUnit_Character))
+        rect = _range_rect(rng)
+    if rect:
+        left, top, _w, h = rect
+        return int(left), int(top + h) + 2
+    return None
+
+
+def _uia_text_caret(elem):
+    """焦点元素的文本光标矩形 → (x, y),取不到返回 None。
+    PowerShell / cmd(Windows Terminal、conhost)等终端没有经典插入符,
+    焦点元素矩形又是整个窗口,只能用 TextPattern 拿真正的光标位置。"""
+    iid2 = _guid(_IID_IUIAutomationTextPattern2)
+    pat = ctypes.c_void_p()
+    # IUIAutomationElement::GetCurrentPatternAs —— vtable[14]
+    hr = _com_call(elem, 14, ctypes.c_long,
+                   (ctypes.c_long, _UIA_TextPattern2Id),
+                   (ctypes.POINTER(_GUID), ctypes.byref(iid2)),
+                   (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(pat)))
+    if hr == 0 and pat.value:
+        try:
+            active = wt.BOOL()
+            rng = ctypes.c_void_p()
+            # IUIAutomationTextPattern2::GetCaretRange —— vtable[10]
+            hr = _com_call(pat, 10, ctypes.c_long,
+                           (ctypes.POINTER(wt.BOOL), ctypes.byref(active)),
+                           (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(rng)))
+            if hr == 0 and rng.value:
+                try:
+                    pos = _caret_from_range(rng)
+                    if pos:
+                        return pos
+                finally:
+                    _com_call(rng, 2, ctypes.c_ulong)  # Release
+        finally:
+            _com_call(pat, 2, ctypes.c_ulong)  # Release
+    # 不支持 TextPattern2 时退而求其次:无选区时 GetSelection 返回光标处的空区间
+    iid1 = _guid(_IID_IUIAutomationTextPattern)
+    pat = ctypes.c_void_p()
+    hr = _com_call(elem, 14, ctypes.c_long,
+                   (ctypes.c_long, _UIA_TextPatternId),
+                   (ctypes.POINTER(_GUID), ctypes.byref(iid1)),
+                   (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(pat)))
+    if hr != 0 or not pat.value:
+        return None
+    try:
+        arr = ctypes.c_void_p()
+        # IUIAutomationTextPattern::GetSelection —— vtable[5]
+        hr = _com_call(pat, 5, ctypes.c_long,
+                       (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(arr)))
+        if hr != 0 or not arr.value:
+            return None
+        try:
+            n = ctypes.c_int(0)
+            # IUIAutomationTextRangeArray::get_Length —— vtable[3]
+            _com_call(arr, 3, ctypes.c_long,
+                      (ctypes.POINTER(ctypes.c_int), ctypes.byref(n)))
+            if n.value < 1:
+                return None
+            rng = ctypes.c_void_p()
+            # IUIAutomationTextRangeArray::GetElement —— vtable[4]
+            hr = _com_call(arr, 4, ctypes.c_long,
+                           (ctypes.c_int, 0),
+                           (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(rng)))
+            if hr != 0 or not rng.value:
+                return None
+            try:
+                return _caret_from_range(rng)
+            finally:
+                _com_call(rng, 2, ctypes.c_ulong)  # Release
+        finally:
+            _com_call(arr, 2, ctypes.c_ulong)  # Release
+    finally:
+        _com_call(pat, 2, ctypes.c_ulong)  # Release
+
+
 def uia_caret():
-    """用 UIA 取当前焦点元素矩形,返回候选框落点 (x, y);取不到返回 None。"""
+    """用 UIA 取候选框落点 (x, y):先 TextPattern 取真实文本光标
+    (终端/编辑器),再退回焦点元素矩形(普通输入框);取不到返回 None。"""
     if not _uia_tried:
         _uia_init()
     if not _uia:
@@ -232,6 +348,9 @@ def uia_caret():
                        (ctypes.POINTER(ctypes.c_void_p), ctypes.byref(elem)))
         if hr != 0 or not elem.value:
             return None
+        pos = _uia_text_caret(elem)  # 终端/编辑器:真实文本光标
+        if pos:
+            return pos
         # IUIAutomationElement::GetCurrentPropertyValue —— vtable[10]
         var = _VARIANT()
         hr = _com_call(elem, 10, ctypes.c_long,
