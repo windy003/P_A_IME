@@ -20,7 +20,7 @@ MAX_PINYIN = 30      # 拼音缓冲区上限
 FUZZY_PAIRS = [
     ("z", "zh"), ("c", "ch"), ("s", "sh"),    # 平翘舌
     ("n", "l"),                               # 鼻边音
-     ("en", "eng"), ("in", "ing"),
+     ("en", "eng"), ("in", "ing"), 
     ("l", "r"),                 # 按需开启
 ]
 MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
