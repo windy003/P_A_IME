@@ -1,24 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-PyIME —— 一个运行在 Windows 11 上的简易中文拼音输入法(纯 Python 标准库实现)。
-
-原理:
-  通过 WH_KEYBOARD_LL 全局键盘钩子拦截按键,在内部组合拼音串,
-  用 tkinter 显示候选窗,选字后用 SendInput(KEYEVENTF_UNICODE)
-  把汉字直接发送到当前焦点程序。对记事本、浏览器、IDE 等均有效。
-
-用法:
-  python pyime.py            # 启动(带控制台日志)
-  python pyime.py --selftest # 只测试拼音切分/查词逻辑
-
-按键:
-  Ctrl+Space / 单击 Shift   切换 中/英 模式
-  a-z                       输入拼音        '   手动隔音
-  1-9 / 空格                选择候选(空格=第1个)
-  - = / PgUp PgDn           候选翻页
-  Backspace                 删除一个字母    Esc  取消输入
-  Enter                     上屏原始字母
-"""
 
 import bisect
 import ctypes
