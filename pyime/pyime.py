@@ -18,7 +18,6 @@ PyIME —— 一个运行在 Windows 11 上的简易中文拼音输入法(纯 Py
   - = / PgUp PgDn           候选翻页
   Backspace                 删除一个字母    Esc  取消输入
   Enter                     上屏原始字母
-  Ctrl+Shift+Q              退出输入法
 """
 
 import bisect
@@ -672,9 +671,6 @@ class Engine:
         # 全局热键
         if vk == VK_SPACE and ctrl_down():
             self.toggle()
-            return True
-        if vk == 0x51 and ctrl_down() and shift_down():  # Ctrl+Shift+Q
-            self.q.put(("quit",))
             return True
         if vk in SHIFT_KEYS:
             if not (ctrl_down() or alt_down() or win_down()):
