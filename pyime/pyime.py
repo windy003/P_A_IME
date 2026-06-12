@@ -667,9 +667,7 @@ class Engine:
         if not self.cn_mode:
             return False
         if ctrl_down() or alt_down() or win_down():
-            if self.buf:
-                self.clear()
-            return False
+            return False  # 带修饰键的快捷键直接放行,组词不受影响(取消用 Esc)
 
         composing = bool(self.buf)
 
