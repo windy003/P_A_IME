@@ -1,5 +1,4 @@
 
-import bisect
 import ctypes
 import ctypes.wintypes as wt
 import os
@@ -438,12 +437,7 @@ class Dict:
                 self.syllables.add(s)
         for v in self.table.values():
             v.sort(key=lambda x: -x[1])
-        self.sorted_keys = sorted(self.table.keys())
         self.maxsyl = max(len(s) for s in self.syllables)
-        self.prefixes = set()  # 所有音节的真前缀,如 zh / zho(用于识别打了一半的音节)
-        for s in self.syllables:
-            for L in range(1, len(s)):
-                self.prefixes.add(s[:L])
         # 模糊音:声母替换对 + 每个音节的等价音节集合(闭包,只保留词库里存在的)
         self.init_subs, final_subs = [], []
         for a, b in FUZZY_PAIRS:
@@ -491,14 +485,8 @@ class Dict:
                     i += L
                     break
             else:
-                for L in range(min(self.maxsyl, n - i), 0, -1):
-                    if buf[i:i + L] in self.prefixes:  # 不完整音节,如 zhon
-                        segs.append(buf[i:i + L])
-                        i += L
-                        break
-                else:
-                    segs.append(buf[i])
-                    i += 1
+                segs.append(buf[i])
+                i += 1
         return segs
 
     def fuzzy_keys(self, sub):
@@ -513,7 +501,7 @@ class Dict:
 
     def candidates(self, buf):
         """返回 [(候选词, 消耗的音节数)];优先整串精确匹配,再模糊音,
-        再末音节前缀补全,再逐级缩短。"""
+        再逐级缩短;只匹配完整音节,不做前缀补全。"""
         segs = self.segment(buf)
         if not segs:
             return [], []
@@ -536,30 +524,6 @@ class Dict:
                     fz.extend(self.table.get(k, []))
                 for w, _wt in sorted(fz, key=lambda x: -x[1]):
                     add(w, n)
-            if n == len(segs) and all(s in self.syllables for s in sub[:-1]):
-                # 末音节按前缀补全(例如 zhon -> zhong;nihaom -> ni hao ma),
-                # 前面的音节及末音节声母同样参与模糊
-                lasts = [sub[-1]]
-                for x, y in self.init_subs:
-                    if _initial(sub[-1]) == x:
-                        lasts.append(y + sub[-1][len(x):])
-                leads = self.fuzzy_keys(sub[:-1])[:8] if n > 1 else [""]
-                hits = []
-                for li, lead in enumerate(leads):
-                    for fi, last in enumerate(lasts):
-                        fz = li > 0 or fi > 0
-                        prefix = (lead + " " + last) if lead else last
-                        lo = bisect.bisect_left(self.sorted_keys, prefix)
-                        for k in self.sorted_keys[lo:lo + 800]:
-                            if not k.startswith(prefix):
-                                break
-                            if complete and k == prefix:
-                                continue  # 整串匹配分支已经加过
-                            for w, wt_ in self.table[k][:3]:
-                                hits.append((w, n, wt_, k.count(" ") + 1, fz))
-                hits.sort(key=lambda x: (x[3] != n, x[4], -x[2]))
-                for w, nseg, _w, _c, _f in hits[:20]:
-                    add(w, nseg)
 
         # 简拼:整串全是声母字母时,按声母串补充候选(消耗整个缓冲区)
         letters = buf.replace("'", "")
