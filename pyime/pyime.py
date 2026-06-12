@@ -404,6 +404,31 @@ def caret_pos():
     return pt.x + 10, pt.y + 16
 
 
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT),
+                ("rcWork", wt.RECT), ("dwFlags", wt.DWORD)]
+
+
+user32.MonitorFromPoint.restype = ctypes.c_void_p
+user32.MonitorFromPoint.argtypes = (wt.POINT, wt.DWORD)
+user32.GetMonitorInfoW.argtypes = (ctypes.c_void_p, ctypes.POINTER(MONITORINFO))
+
+
+def work_area(x, y):
+    """点 (x, y) 所在显示器的工作区(屏幕去掉任务栏),返回 (left, top, right, bottom);
+    取不到时退回主屏全尺寸。"""
+    try:
+        mon = user32.MonitorFromPoint(wt.POINT(x, y), 2)  # MONITOR_DEFAULTTONEAREST
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        if mon and user32.GetMonitorInfoW(mon, ctypes.byref(mi)):
+            r = mi.rcWork
+            return r.left, r.top, r.right, r.bottom
+    except Exception:
+        pass
+    return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+
+
 # ---------------------------------------------------------------- 词库
 _INITIALS_2 = ("zh", "ch", "sh")
 _INITIALS_1 = frozenset("bpmfdtnlgkhjqxrzcsyw")
@@ -1080,10 +1105,12 @@ def run_ui(ui_q, hook_thread):
 
     def place_show(w, hwnd, x, y):
         w.update_idletasks()
-        sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
         ww, wh = w.winfo_reqwidth(), w.winfo_reqheight()
-        x = max(0, min(x, sw - ww))
-        y = max(0, min(y, sh - wh))
+        left, top, right, bottom = work_area(x, y)  # 所在显示器工作区(不含任务栏)
+        if y + wh > bottom:
+            y = y - wh - 28  # 底部放不下(光标贴近任务栏)→ 翻到光标上方,避免遮挡输入行
+        x = max(left, min(x, right - ww))
+        y = max(top, min(y, bottom - wh))
         w.geometry("+%d+%d" % (x, y))
         w.update_idletasks()
         user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
@@ -1130,8 +1157,8 @@ def selftest(dic):
     assert cands and cands[0][0] == "你好", cands[:5]
     cands, _ = dic.candidates("zhongguo")
     assert any(w == "中国" for w, _n in cands[:3]), cands[:5]
-    cands, _ = dic.candidates("zhon")       # 末音节前缀
-    assert any(w == "中" for w, _n in cands[:8]), cands[:8]
+    cands, _ = dic.candidates("zhon")       # 不完整音节不再补全
+    assert not cands, cands[:8]
     cands, _ = dic.candidates("shurufa")
     assert any(w == "输入法" for w, _n in cands[:5]), cands[:5]
     cands, _ = dic.candidates("women")
@@ -1141,12 +1168,12 @@ def selftest(dic):
     # 模糊音
     cands, _ = dic.candidates("zongguo")      # z/zh
     assert any(w == "中国" for w, _n in cands[:5]), cands[:5]
-    cands, _ = dic.candidates("lihao")        # n/l
-    assert any(w == "你好" for w, _n in cands[:5]), cands[:5]
+    cands, _ = dic.candidates("longyi")       # l/r:容易
+    assert any(w == "容易" for w, _n in cands[:5]), cands[:5]
     cands, _ = dic.candidates("gaoxin")       # in/ing:高兴
     assert any(w == "高兴" for w, _n in cands[:5]), cands[:5]
-    cands, _ = dic.candidates("zon")          # 不完整音节 + 声母模糊
-    assert any(w == "中" for w, _n in cands[:8]), cands[:8]
+    cands, _ = dic.candidates("zon")          # 不完整音节不再补全(即使有声母模糊)
+    assert not cands, cands[:8]
     cands, _ = dic.candidates("zhongguo")     # 精确匹配仍排第一
     assert cands[0][0] == "中国", cands[:5]
     # 简拼
