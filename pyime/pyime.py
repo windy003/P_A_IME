@@ -12,7 +12,7 @@ import time
 # ---------------------------------------------------------------- 配置
 DICT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          "pinyin_simp.dict.yaml")
-PAGE_SIZE = 6        # 每页候选数
+PAGE_SIZE = 7   # 每页候选数
 MAX_CANDS = 60       # 最多取多少个候选
 MAX_PINYIN = 30      # 拼音缓冲区上限
 
@@ -1080,13 +1080,13 @@ def run_ui(ui_q, hook_thread):
     win.withdraw()
     win.overrideredirect(True)
     win.attributes("-topmost", True)
-    BG, FG, HL = "#ffffff", "#202020", "#1a73e8"
+    BG, FG = "#ffffff", "#202020"
     frame = tk.Frame(win, bg=BG, padx=8, pady=5,
                      highlightthickness=1, highlightbackground="#c0c0c0")
     frame.pack()
     f_comp = tkfont.Font(family="Microsoft YaHei UI", size=10)
     f_cand = tkfont.Font(family="Microsoft YaHei UI", size=12)
-    lbl_comp = tk.Label(frame, bg=BG, fg=HL, font=f_comp, anchor="w")
+    lbl_comp = tk.Label(frame, bg=BG, fg=FG, font=f_comp, anchor="w")
     lbl_comp.pack(fill="x")
     lbl_cand = tk.Label(frame, bg=BG, fg=FG, font=f_cand, anchor="w")
     lbl_cand.pack(fill="x")
