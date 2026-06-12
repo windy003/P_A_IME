@@ -26,8 +26,6 @@ MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
 ENABLE_SHOUPIN = True  # 简拼:每个音节只打声母,如 zg->这个/中国、bj->北京、nh->你好
 MAX_SHOUPIN_PER_KEY = 80  # 每个声母串最多保留多少候选(按词频)
 
-CN_PUNCT = False  # 中文模式下的标点:True=中文全角(,。?),False=英文半角(,.?)
-
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
@@ -561,16 +559,7 @@ class Dict:
 
 # ---------------------------------------------------------------- 输入法状态机(运行在钩子线程)
 class Engine:
-    PUNCT = {  # vk: (普通, Shift)
-        VK_OEM_COMMA: (",", "《"), VK_OEM_PERIOD: ("。", "》"),
-        VK_OEM_1: (";", ":"), VK_OEM_2: ("、", "?"),
-        VK_OEM_5: ("、", "·"), VK_OEM_3: ("·", "~"),
-        VK_OEM_4: ("【", "「"), VK_OEM_6: ("】", "」"),
-        VK_OEM_MINUS: (None, "——"), VK_OEM_PLUS: (None, None),
-        0x31: (None, "!"), 0x34: (None, "¥"), 0x36: (None, "……"),
-        0x39: (None, "("), 0x30: (None, ")"),
-    }
-    PUNCT_EN = {  # CN_PUNCT=False 时组词中按标点用:vk -> (普通, Shift)
+    PUNCT = {  # 组词中按标点用(英文半角):vk -> (普通, Shift)
         VK_OEM_COMMA: (",", "<"), VK_OEM_PERIOD: (".", ">"),
         VK_OEM_1: (";", ":"), VK_OEM_2: ("/", "?"),
         VK_OEM_5: ("\\", "|"), VK_OEM_3: ("`", "~"),
@@ -589,8 +578,6 @@ class Engine:
         self.cands = []      # [(词, 消耗音节数)]
         self.segs = []
         self.page = 0
-        self.quote_s = True  # 下一个单引号是否为左引号
-        self.quote_d = True
         self.shift_tap = False  # Shift 按下且尚无其他键 → 抬起时切换模式
         self.posgen = 0      # 定位代数:上屏/清空后 +1,UI 线程据此重新取候选框落点
         self.tray = None     # 系统托盘图标(托盘创建后回填),用于切换时刷新 中/英
@@ -715,31 +702,15 @@ class Engine:
                     self.refresh()
                 return True
 
-        # 标点(组词中按标点 = 先上屏首选词再发标点)
+        # 标点(组词中按标点 = 先上屏首选词再发标点;不在组词直接放行)
         ch = self.punct_char(vk)
-        if ch is None:
+        if ch is None or not composing:
             return False
-        if composing:
-            self.choose(0)
-        elif not CN_PUNCT:
-            return False  # 英文标点 + 不在组词:直接放行原始按键
+        self.choose(0)
         self.commit(ch)
         return True
 
     def punct_char(self, vk):
-        if not CN_PUNCT:  # 英文标点模式
-            pair = self.PUNCT_EN.get(vk)
-            if not pair:
-                return None
-            return pair[1] if shift_down() else pair[0]
-        if vk == VK_OEM_7:  # 中文引号需要配对
-            if shift_down():
-                ch = "“" if self.quote_d else "”"
-                self.quote_d = not self.quote_d
-            else:
-                ch = "‘" if self.quote_s else "’"
-                self.quote_s = not self.quote_s
-            return ch
         pair = self.PUNCT.get(vk)
         if not pair:
             return None
