@@ -19,7 +19,7 @@ MAX_PINYIN = 30      # 拼音缓冲区上限
 FUZZY_PAIRS = [
     ("z", "zh"), ("c", "ch"), ("s", "sh"),    # 平翘舌
      ("en", "eng"), ("in", "ing"), 
-    ("l", "r"),("on", "ong")              # 按需开启
+    ("l", "r"),("on", "ong")            # 按需开启
 ]
 MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
 
@@ -523,8 +523,8 @@ class Dict:
         return combos
 
     def candidates(self, buf):
-        """返回 [(候选词, 消耗的音节数)];优先整串精确匹配,再模糊音,
-        再逐级缩短;只匹配完整音节,不做前缀补全。"""
+        """返回 [(候选词, 消耗的音节数)];整串匹配时精确与模糊拼音的候选合并,
+        统一按权重排序(同权重精确在前),再逐级缩短;只匹配完整音节,不做前缀补全。"""
         segs = self.segment(buf)
         if not segs:
             return [], []
@@ -539,13 +539,12 @@ class Dict:
             sub = segs[:n]
             complete = all(s in self.syllables for s in sub)
             if complete:
-                keys = self.fuzzy_keys(sub)
-                for w, _wt in self.table.get(keys[0], []):  # 精确匹配在前
-                    add(w, n)
-                fz = []
-                for k in keys[1:]:
-                    fz.extend(self.table.get(k, []))
-                for w, _wt in sorted(fz, key=lambda x: -x[1]):
+                pool = []  # 精确 + 模糊全部候选,统一按权重排序,同权重精确在前
+                for ki, k in enumerate(self.fuzzy_keys(sub)):
+                    for w, wt_ in self.table.get(k, []):
+                        pool.append((w, wt_, ki))
+                pool.sort(key=lambda x: (-x[1], x[2]))
+                for w, _wt, _ki in pool:
                     add(w, n)
 
         # 简拼:整串全是声母字母时,按声母串补充候选(消耗整个缓冲区)
@@ -555,6 +554,60 @@ class Dict:
             for w, _wt in self.abbr.get(letters, []):
                 add(w, len(segs))
         return out, segs
+
+    def bump(self, word, sub):
+        """选词调权:把选中词的权重提为同拼音候选池里的最大权重 + 1(内存立即生效)。
+        返回需写回文件的 (拼音键, 新权重);已是唯一最高或找不到时返回 None。"""
+        sylls = [s for s in sub if s != "'"]
+        if not sylls:
+            return None
+        target, pool = None, None
+        if all(s in self.syllables for s in sylls):
+            keys = self.fuzzy_keys(sylls)  # 第一个是原拼音,优先归到精确键下
+            for k in keys:
+                if any(w == word for w, _ in self.table.get(k, ())):
+                    target = k
+                    break
+            if target:
+                pool = [t for k in keys for t in self.table.get(k, ())]
+        if target is None:  # 简拼选词:反查该词真正的拼音键
+            letters = "".join(sylls)
+            ab = self.abbr.get(letters)
+            if ab and any(w == word for w, _ in ab):
+                pool = ab
+                for k, v in self.table.items():
+                    ss = k.split(" ")
+                    if (len(ss) == len(letters)
+                            and all(s[0] == c for s, c in zip(ss, letters))
+                            and any(w == word for w, _ in v)):
+                        target = k
+                        break
+        if target is None:
+            return None
+        mx = max(w_ for _, w_ in pool)
+        cur = next(w_ for w, w_ in self.table[target] if w == word)
+        if cur == mx and sum(1 for _, w_ in pool if w_ == mx) == 1:
+            return None  # 已是唯一最高,无需调整
+        new = mx + 1
+        self._set_weight(target, word, new)
+        return target, new
+
+    def _set_weight(self, key, word, weight):
+        lst = self.table[key]
+        for i, (w, _) in enumerate(lst):
+            if w == word:
+                lst[i] = (w, weight)
+                break
+        lst.sort(key=lambda x: -x[1])
+        sylls = key.split(" ")
+        if len(sylls) >= 2:  # 同步简拼桶里的副本
+            ab = self.abbr.get("".join(s[0] for s in sylls))
+            if ab:
+                for i, (w, _) in enumerate(ab):
+                    if w == word:
+                        ab[i] = (w, weight)
+                        ab.sort(key=lambda x: -x[1])
+                        break
 
 
 # ---------------------------------------------------------------- 输入法状态机(运行在钩子线程)
@@ -625,6 +678,12 @@ class Engine:
             return
         word, nseg = self.cands[flat]
         self.commit(word)
+        try:  # 选词调权:提到同拼音最高,并排队写回词库文件
+            upd = self.dic.bump(word, self.segs[:nseg])
+            if upd:
+                _weight_q.put((word,) + upd)
+        except Exception as e:
+            print("[PyIME] 选词调权失败:%s" % e)
         # 去掉已消耗音节对应的字母(buf 里可能夹隔音符),余下继续组词
         b = self.buf
         for s in self.segs[:nseg]:
@@ -1159,6 +1218,50 @@ def selftest(dic):
           % (len(dic.table), len(dic.syllables), len(dic.fuzzy), len(dic.abbr)))
 
 
+_weight_q = queue.Queue()   # (词, 拼音键, 新权重) 待写回文件
+_SELF_WRITE = [0.0]         # 自己写文件产生的 mtime,watch_dict 据此跳过重载
+
+
+def _update_dict_file(word, key, weight):
+    """把词库文件里 word+key 那一行的权重列改为 weight,原子替换写回。"""
+    raw = open(DICT_FILE, encoding="utf-8", newline="").read()
+    lines = raw.split("\n")
+    body = False
+    for i, line in enumerate(lines):
+        if not body:
+            if line.strip() == "...":  # yaml 头结束标记,词条在其后
+                body = True
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0] == word and parts[1].strip() == key:
+            if len(parts) >= 3:
+                parts[2] = str(weight)
+            else:
+                parts.append(str(weight))
+            lines[i] = "\t".join(parts)
+            break
+    else:
+        return False
+    tmp = DICT_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write("\n".join(lines))
+    os.replace(tmp, DICT_FILE)
+    return True
+
+
+def weight_writer():
+    """串行消费 _weight_q,把选词调权写回词库文件(独立线程,不阻塞键盘钩子)。"""
+    while True:
+        word, key, weight = _weight_q.get()
+        try:
+            if _update_dict_file(word, key, weight):
+                _SELF_WRITE[0] = os.path.getmtime(DICT_FILE)
+            else:
+                print("[PyIME] 调权未写入:词库文件里找不到 %s\t%s" % (word, key))
+        except Exception as e:
+            print("[PyIME] 写回词库权重失败:%s" % e)
+
+
 def watch_dict(engine):
     """后台轮询词库文件的修改时间,变化后热重载词库并替换 engine.dic,
     无需重启应用。加载失败(如文件写到一半)保留旧词库,下次修改再试。"""
@@ -1181,6 +1284,8 @@ def watch_dict(engine):
         except OSError:
             continue
         last = m
+        if m == _SELF_WRITE[0]:
+            continue  # 是自己写回的权重,内存已同步,不必重载
         try:
             t0 = time.time()
             dic = Dict(DICT_FILE)
@@ -1216,6 +1321,7 @@ def main():
     hook = HookThread(engine)
     hook.start()
     threading.Thread(target=watch_dict, args=(engine,), daemon=True).start()
+    threading.Thread(target=weight_writer, daemon=True).start()
     print("[PyIME] 已启动,当前为中文模式。")
     run_ui(ui_q, hook)
 

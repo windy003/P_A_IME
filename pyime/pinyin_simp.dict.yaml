@@ -734,7 +734,7 @@ sort: by_weight
 湃	pai	29
 哌	pai	120
 牌	pai	5771
-排	pai	5969
+排	pai	18300
 派	pai	6066
 拍	pai	18299
 瀊	pan	0
@@ -3193,8 +3193,8 @@ sort: by_weight
 塌	ta	503
 踏	ta	815
 塔	ta	3616
-它	ta	58897
-她	ta	204022
+它	ta	343910
+她	ta	343909
 他	ta	343908
 鮐	tai	0
 籉	tai	0
@@ -12947,8 +12947,8 @@ sort: by_weight
 市	shi	18050
 使	shi	34422
 事	shi	38942
-时	shi	117616
-是	shi	1180957
+时	shi	1180958
+是	shi	1180959
 獣	shou	4
 綬	shou	5
 獸	shou	13
@@ -13979,8 +13979,8 @@ sort: by_weight
 赐	ci	610
 辞	ci	1044
 刺	ci	1445
-词	ci	5362
-此	ci	17237
+词	ci	65317
+此	ci	65316
 次	ci	21278
 輳	cou	1
 楱	cou	1
@@ -34192,7 +34192,7 @@ sort: by_weight
 紧紧	jin jin	2258
 仅仅	jin jin	6694
 进京	jin jing	361
-紧缺	jin que	471
+紧缺	jin que	1719
 今起	jin qi	179
 进气	jin qi	181
 近期	jin qi	6537
@@ -34429,7 +34429,7 @@ sort: by_weight
 敬酒	jing jiu	182
 警局	jing ju	133
 京剧	jing ju	568
-精确	jing que	1718
+精确	jing que	1720
 经期	jing qi	279
 景气	jing qi	414
 惊奇	jing qi	742
@@ -65141,3 +65141,4 @@ sort: by_weight
 谢谢你	xie xie ni	100
 这样子	zhe yang zi	100
 能不能	neng bu neng	100
+热重载	re zhong zai	100
