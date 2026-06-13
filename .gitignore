@@ -1,2 +1,6 @@
 .claude/
 pyime/__pycache__/
+Android_App/app/build/
+Android_App/build/
+Android_App/.gradle/
+Android_App/.idea/

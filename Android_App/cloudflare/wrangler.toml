@@ -1,0 +1,12 @@
+name = "pyime"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# 用 `wrangler d1 create pyime` 创建数据库后,把输出里的 database_id 填到这里。
+[[d1_databases]]
+binding = "DB"
+database_name = "pyime"
+database_id = "de597235-c566-4290-a361-329da57df16f"
+
+# 注意:不要把密钥写在这里,用机密设置:
+#   wrangler secret put ADMIN_KEY     # 管理员注册账号用的密钥
