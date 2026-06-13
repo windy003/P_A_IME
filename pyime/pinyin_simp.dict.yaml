@@ -13,6 +13,9 @@ version: "0.1"
 sort: by_weight
 ...
 
+
+
+就这样子	jiu zhe yang zhi	100
 鼥	ba	0
 釛	ba	0
 軷	ba	0
@@ -54,7 +57,7 @@ sort: by_weight
 巴	ba	3193
 爸	ba	3625
 八	ba	6677
-把	ba	165484
+把	ba	385206
 吧	ba	385205
 竡	bai	0
 拝	bai	2
@@ -456,7 +459,7 @@ sort: by_weight
 扁	bian	1723
 编	bian	2919
 遍	bian	3213
-变	bian	13218
+变	bian	16096
 边	bian	14352
 便	bian	16095
 鰾	biao	0
@@ -2750,8 +2753,8 @@ sort: by_weight
 睇	di	4939
 底	di	5497
 滴	di	11816
-低	di	15738
-第	di	24313
+低	di	101786
+第	di	101787
 地	di	101785
 嗲	dia	1341
 婝	dian	0
@@ -3862,8 +3865,8 @@ sort: by_weight
 腿	tui	4066
 推	tui	5296
 退	tui	7395
-唔	n	1126
-嗯	n	31982
+唔	n	31985
+嗯	n	31984
 餪	nuan	0
 渜	nuan	0
 奻	nuan	3
@@ -5827,8 +5830,8 @@ sort: by_weight
 哥	ge	9418
 歌	ge	11397
 格	ge	13038
-各	ge	29019
-个	ge	245957
+各	ge	245958
+个	ge	245959
 揯	gen	0
 茛	gen	6
 亘	gen	63
@@ -6189,7 +6192,7 @@ sort: by_weight
 筐	kuang	253
 匡	kuang	295
 况	kuang	402
-框	kuang	1836
+框	kuang	4206
 矿	kuang	2400
 狂	kuang	4205
 硱	kun	0
@@ -6614,7 +6617,7 @@ sort: by_weight
 滑	hua	1467
 划	hua	1591
 华	hua	7045
-画	hua	8040
+画	hua	57808
 化	hua	11875
 花	hua	23744
 话	hua	57807
@@ -12947,8 +12950,8 @@ sort: by_weight
 市	shi	18050
 使	shi	34422
 事	shi	38942
-时	shi	1180958
-是	shi	1180959
+时	shi	1180960
+是	shi	1180961
 獣	shou	4
 綬	shou	5
 獸	shou	13
@@ -23025,7 +23028,7 @@ sort: by_weight
 得上	de shang	354
 德胜	de sheng	130
 得失	de shi	443
-的是	de shi	4041
+的是	de shi	11483
 的事	de shi	11482
 得手	de shou	426
 的手	de shou	2321

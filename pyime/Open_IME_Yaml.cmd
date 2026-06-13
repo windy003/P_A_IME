@@ -1,0 +1,1 @@
+start /b notepad++  "D:\files\using\Python\P_PC_IME\pyime\pinyin_simp.dict.yaml"

@@ -118,6 +118,62 @@ def win_down():
     return bool((user32.GetAsyncKeyState(VK_LWIN) | user32.GetAsyncKeyState(VK_RWIN)) & 0x8000)
 
 
+kernel32.OpenProcess.restype = wt.HANDLE
+kernel32.OpenProcess.argtypes = (wt.DWORD, wt.BOOL, wt.DWORD)
+kernel32.QueryFullProcessImageNameW.argtypes = (wt.HANDLE, wt.DWORD, wt.LPWSTR,
+                                                ctypes.POINTER(wt.DWORD))
+kernel32.CloseHandle.argtypes = (wt.HANDLE,)
+
+# Win 搜索/开始菜单等沉浸式 shell 面板:系统把它们放在更高的窗口层级(z-band),
+# 普通置顶窗口(候选框)画不到它们上面 → 改把候选框挪到面板矩形旁边的空隙里显示
+_SHELL_PANEL_EXE = {"searchhost.exe", "searchapp.exe",          # Win11 / Win10 搜索
+                    "startmenuexperiencehost.exe",              # 开始菜单
+                    "shellexperiencehost.exe"}                  # 通知中心等 shell 面板
+_panel_cache = {}  # pid -> bool
+
+
+def fg_shell_panel():
+    """前台窗口属于候选框画不上去的系统沉浸式面板时返回 True。"""
+    try:
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        pid = pid.value
+        if pid in _panel_cache:
+            return _panel_cache[pid]
+        name = ""
+        h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if h:
+            buf = ctypes.create_unicode_buffer(260)
+            size = wt.DWORD(260)
+            if kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                name = buf.value.rsplit("\\", 1)[-1].lower()
+            kernel32.CloseHandle(h)
+        ok = name in _SHELL_PANEL_EXE
+        if len(_panel_cache) > 256:
+            _panel_cache.clear()
+        _panel_cache[pid] = ok
+        return ok
+    except Exception:
+        return False
+
+
+def shell_panel_rect():
+    """前台是沉浸式面板时返回其屏幕矩形 (left, top, right, bottom),否则 None。"""
+    if not fg_shell_panel():
+        return None
+    try:
+        hwnd = user32.GetForegroundWindow()
+        rc = wt.RECT()
+        if hwnd and user32.GetWindowRect(hwnd, ctypes.byref(rc)):
+            return rc.left, rc.top, rc.right, rc.bottom
+    except Exception:
+        pass
+    return None
+
+
 def send_text(text):
     """用 KEYEVENTF_UNICODE 把字符串发送到当前焦点窗口。"""
     data = text.encode("utf-16-le")
@@ -553,6 +609,9 @@ class Dict:
                 and all(c in _ABBR_LETTERS for c in letters)):
             for w, _wt in self.abbr.get(letters, []):
                 add(w, len(segs))
+        # 消耗输入更多的候选排在前(如 nbn:吃满 3 个字母的"能不能"应在只占 1 个的"嗯"前);
+        # 稳定排序,同消耗数内保持原有的权重次序
+        out.sort(key=lambda x: -x[1])
         return out, segs
 
     def bump(self, word, sub):
@@ -1135,6 +1194,16 @@ def run_ui(ui_q, hook_thread):
         w.update_idletasks()
         ww, wh = w.winfo_reqwidth(), w.winfo_reqheight()
         left, top, right, bottom = work_area(x, y)  # 所在显示器工作区(不含任务栏)
+        r = shell_panel_rect()
+        if r:  # Win 搜索等沉浸式面板:候选框画不到其上层,挪到面板旁边的空隙里
+            if r[0] - left >= ww + 16:     # 左侧空间够
+                x = r[0] - ww - 8
+            elif right - r[2] >= ww + 16:  # 右侧空间够
+                x = r[2] + 8
+            elif r[3] + wh + 8 <= bottom:  # 两侧都不够 → 面板下方
+                x, y = r[0], r[3] + 8
+            else:                          # 最后退路:面板上方
+                x, y = r[0], r[1] - wh - 8
         if y + wh > bottom:
             y = y - wh - 28  # 底部放不下(光标贴近任务栏)→ 翻到光标上方,避免遮挡输入行
         x = max(left, min(x, right - ww))
