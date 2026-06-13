@@ -1159,6 +1159,40 @@ def selftest(dic):
           % (len(dic.table), len(dic.syllables), len(dic.fuzzy), len(dic.abbr)))
 
 
+def watch_dict(engine):
+    """后台轮询词库文件的修改时间,变化后热重载词库并替换 engine.dic,
+    无需重启应用。加载失败(如文件写到一半)保留旧词库,下次修改再试。"""
+    try:
+        last = os.path.getmtime(DICT_FILE)
+    except OSError:
+        last = 0
+    while True:
+        time.sleep(1)
+        try:
+            m = os.path.getmtime(DICT_FILE)
+        except OSError:
+            continue  # 文件正在被替换,暂时不存在
+        if m == last:
+            continue
+        time.sleep(0.5)  # 等编辑器写完
+        try:
+            if os.path.getmtime(DICT_FILE) != m:
+                continue  # 还在写入,下一轮再查
+        except OSError:
+            continue
+        last = m
+        try:
+            t0 = time.time()
+            dic = Dict(DICT_FILE)
+            engine.dic = dic
+            if engine.buf:  # 正在组词则用新词库立即刷新候选
+                engine.refresh()
+            print("[PyIME] 检测到词库修改,已重新加载:%d 条,耗时 %.1fs"
+                  % (len(dic.table), time.time() - t0))
+        except Exception as e:
+            print("[PyIME] 词库重载失败,继续使用旧词库:%s" % e)
+
+
 def main():
     try:  # Per-Monitor V2 DPI,坐标才能和 tkinter 对得上
         user32.SetProcessDpiAwarenessContext(ctypes.c_ssize_t(-4))
@@ -1181,6 +1215,7 @@ def main():
     engine = Engine(dic, ui_q)
     hook = HookThread(engine)
     hook.start()
+    threading.Thread(target=watch_dict, args=(engine,), daemon=True).start()
     print("[PyIME] 已启动,当前为中文模式。")
     run_ui(ui_q, hook)
 
