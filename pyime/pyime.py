@@ -486,7 +486,9 @@ def work_area(x, y):
 # ---------------------------------------------------------------- 词库
 _INITIALS_2 = ("zh", "ch", "sh")
 _INITIALS_1 = frozenset("bpmfdtnlgkhjqxrzcsyw")
-_ABBR_LETTERS = _INITIALS_1  # 简拼里允许出现的字母(每音节取首字母,zh/ch/sh 归为 z/c/s)
+# 简拼里允许出现的字母:声母 + 零声母音节(an/ou/e… 等)的首字母 a/e/o,
+# 否则像 安卓=an zhuo→az、欧盟=ou meng→om 这类首音节零声母的词,简拼会查不到
+_ABBR_LETTERS = _INITIALS_1 | frozenset("aeo")
 
 
 def _initial(s):

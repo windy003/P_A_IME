@@ -13,8 +13,8 @@ version: "0.1"
 sort: by_weight
 ...
 
-
-
+简拼	jian pin	4630
+安卓	an zhuo	19380
 就这样子	jiu zhe yang zhi	100
 鼥	ba	0
 釛	ba	0
@@ -1094,7 +1094,7 @@ sort: by_weight
 聘	pin	487
 贫	pin	633
 频	pin	806
-拼	pin	2300
+拼	pin	8011
 品	pin	4693
 涄	ping	0
 竮	ping	0
@@ -1884,7 +1884,7 @@ sort: by_weight
 穆	mu	1057
 亩	mu	1202
 目	mu	1983
-母	mu	2619
+母	mu	6481
 木	mu	6480
 藅	fa	0
 疺	fa	0
@@ -8022,7 +8022,7 @@ sort: by_weight
 肩	jian	1126
 检	jian	1209
 箭	jian	1233
-简	jian	1282
+简	jian	26267
 剪	jian	1712
 捡	jian	1723
 健	jian	1820
@@ -11719,7 +11719,7 @@ sort: by_weight
 浊	zhuo	292
 捉	zhuo	866
 桌	zhuo	1227
-卓	zhuo	1329
+卓	zhuo	154138
 着	zhuo	1887
 鑆	zhui	0
 轛	zhui	0
@@ -14757,7 +14757,7 @@ sort: by_weight
 允	yun	476
 孕	yun	578
 芸	yun	743
-韵	yun	1115
+韵	yun	35556
 运	yun	3011
 云	yun	8398
 晕	yun	35555
@@ -16840,7 +16840,7 @@ sort: by_weight
 岸	an	1036
 暗	an	2749
 案	an	4805
-安	an	11597
+安	an	25813
 俺	an	16897
 按	an	25812
 醠	ang	0
@@ -45856,7 +45856,7 @@ sort: by_weight
 此人	ci ren	1308
 次日	ci ri	552
 次子	ci zi	120
-词组	ci zu	302
+词组	ci zu	310
 次次	ci ci	211
 此次	ci ci	7592
 此言	ci yan	202
@@ -57052,7 +57052,7 @@ sort: by_weight
 怎么把	zen me ba	195
 怎么办	zen me ban	6006
 怎么打	zen me da	175
-怎么弄	zen me nong	264
+怎么弄	zen me nong	327
 怎么啦	zen me la	860
 怎么改	zen me gai	133
 怎么搞	zen me gao	275
