@@ -12,7 +12,7 @@ import time
 DICT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          "pinyin_simp.dict.yaml")
 PAGE_SIZE = 7   # 每页候选数
-MAX_CANDS = 60       # 最多取多少个候选
+MAX_CANDS = 10**9    # 最多取多少个候选(设为极大值=不限制,词库匹配到的词全部进入候选)
 MAX_PINYIN = 30      # 拼音缓冲区上限
 
 # 模糊音:每对双向等价;不想要的删掉/注释掉即可,清空列表则完全关闭
@@ -24,13 +24,13 @@ FUZZY_PAIRS = [
 MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
 
 ENABLE_SHOUPIN = True  # 简拼:每个音节只打声母,如 zg->这个/中国、bj->北京、nh->你好
-MAX_SHOUPIN_PER_KEY = 80  # 每个声母串最多保留多少候选(按词频)
+MAX_SHOUPIN_PER_KEY = 10**9  # 每个声母串保留多少候选(按词频),极大值=不限制,全部保留
 
 ENABLE_SINGLE_INITIAL = True  # 单字母:打一个字母即列出所有该拼音首字母开头的词,按权重
-MAX_SINGLE_INITIAL_PER_KEY = 80  # 每个首字母最多保留多少候选(按词频)
+MAX_SINGLE_INITIAL_PER_KEY = 10**9  # 每个首字母保留多少候选(按词频),极大值=不限制,全部保留
 
 ENABLE_TAIL_INITIAL = True  # 末字简拼:前面音节全拼、最后一个字只打声母,如 sej->设计、jisuanj->计算机
-MAX_TAIL_INITIAL_PER_KEY = 80  # 每个「前缀+末声母」键最多保留多少候选(按词频)
+MAX_TAIL_INITIAL_PER_KEY = 10**9  # 每个「前缀+末声母」键保留多少候选(按词频),极大值=不限制,全部保留
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -714,30 +714,42 @@ class Dict:
                         break
         if target is None:
             return None
-        mx = max(w_ for _, w_ in pool)
+        # 比较池并入「简拼桶」:否则像 yun mu 这种全拼键下只有「韵母」一个词时,
+        # 它本就是唯一最高,权重永远涨不上去,进不了简拼 ym 的竞争(始终排在高频词后)。
+        # 纳入简拼桶后,选一次就把它提到能在简拼里也排第一。
+        cmp_pool = list(pool)
+        sylls_t = target.split(" ")
+        if len(sylls_t) >= 2:
+            ab = self.abbr.get("".join(s[0] for s in sylls_t))
+            if ab:
+                cmp_pool += ab
+        mx = max(w_ for _, w_ in cmp_pool)
         cur = next(w_ for w, w_ in self.table[target] if w == word)
-        if cur == mx and sum(1 for _, w_ in pool if w_ == mx) == 1:
+        if cur == mx and sum(1 for _, w_ in cmp_pool if w_ == mx) == 1:
             return None  # 已是唯一最高,无需调整
         new = mx + 1
         self._set_weight(target, word, new)
         return target, new
 
     def _set_weight(self, key, word, weight):
-        lst = self.table[key]
-        for i, (w, _) in enumerate(lst):
-            if w == word:
-                lst[i] = (w, weight)
-                break
-        lst.sort(key=lambda x: -x[1])
+        """把 word 在所有相关索引里的权重统一改为 weight 并重排,保证各处排序一致:
+        主拼音表、简拼桶、末字简拼、单字母索引(它们各持一份 (词,权重) 副本)。"""
+        def upd(lst):
+            if not lst:
+                return
+            for i, (w, _) in enumerate(lst):
+                if w == word:
+                    lst[i] = (w, weight)
+                    lst.sort(key=lambda x: -x[1])
+                    return
+        upd(self.table.get(key))
         sylls = key.split(" ")
-        if len(sylls) >= 2:  # 同步简拼桶里的副本
-            ab = self.abbr.get("".join(s[0] for s in sylls))
-            if ab:
-                for i, (w, _) in enumerate(ab):
-                    if w == word:
-                        ab[i] = (w, weight)
-                        ab.sort(key=lambda x: -x[1])
-                        break
+        if len(sylls) >= 2:
+            upd(self.abbr.get("".join(s[0] for s in sylls)))  # 简拼桶
+            for p in range(1, len(sylls)):                    # 末字简拼各切分点
+                inits = "".join(s[0] for s in sylls[p:])
+                upd(self.part_abbr.get((" ".join(sylls[:p]), inits)))
+        upd(self.initial_idx.get(key[0]))                     # 单字母索引(按拼音首字母归桶)
 
 
 # ---------------------------------------------------------------- 输入法状态机(运行在钩子线程)

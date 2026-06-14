@@ -15,6 +15,11 @@ sort: by_weight
 
 
 
+
+
+选择范围	xuan zhe fan wei	200
+是什么原因	si sheng mo yuan yin	100
+韵母	yun mu	14733
 换一下	huan yi xia	100
 小方块	xiao fang kuai	200
 硬删除	yin san chua	207
@@ -81,7 +86,7 @@ sort: by_weight
 爸	ba	3625
 八	ba	6677
 把	ba	385216
-吧	ba	385215
+吧	ba	385217
 竡	bai	0
 拝	bai	2
 擘	bai	3
@@ -2663,9 +2668,9 @@ sort: by_weight
 底	de	77
 锝	de	94
 德	de	7178
-地	de	35028
+地	de	4828295
 得	de	75568
-的	de	4828294
+的	de	4828296
 扥	den	6
 扽	den	350
 璒	deng	0
@@ -2859,7 +2864,7 @@ sort: by_weight
 雕	diao	593
 钓	diao	857
 叼	diao	1868
-调	diao	2023
+调	diao	20678
 吊	diao	2033
 掉	diao	20677
 跮	die	0
@@ -6271,7 +6276,7 @@ sort: by_weight
 蒯	kuai	55
 侩	kuai	80
 筷	kuai	102
-块	kuai	16563
+块	kuai	48012
 快	kuai	48011
 裃	ka	1
 擖	ka	1
@@ -8740,7 +8745,7 @@ sort: by_weight
 泉	quan	1889
 劝	quan	2132
 圈	quan	3567
-权	quan	5707
+权	quan	25877
 全	quan	25876
 搉	que	0
 慤	que	1
@@ -12974,7 +12979,7 @@ sort: by_weight
 使	shi	34422
 事	shi	1180981
 时	shi	1180991
-是	shi	1180990
+是	shi	1180992
 獣	shou	4
 綬	shou	5
 獸	shou	13
@@ -14780,7 +14785,7 @@ sort: by_weight
 允	yun	476
 孕	yun	578
 芸	yun	743
-韵	yun	35558
+韵	yun	35560
 运	yun	3011
 云	yun	35559
 晕	yun	35557
@@ -34940,7 +34945,7 @@ sort: by_weight
 拳脚	quan jiao	200
 全景	quan jing	401
 全剧	quan ju	127
-全局	quan ju	1459
+全局	quan ju	11020
 劝劝	quan quan	109
 全权	quan quan	248
 圈圈	quan quan	417
@@ -42354,7 +42359,7 @@ sort: by_weight
 审批	shen pi	3825
 神码	shen ma	206
 深埋	shen mai	146
-什么	shen me	295405
+什么	shen me	295407
 审美	shen mei	1349
 神秘	shen mi	3854
 神庙	shen miao	464
@@ -44634,8 +44639,8 @@ sort: by_weight
 在座	zai zuo	417
 再做	zai zuo	667
 在做	zai zuo	1078
-在此	zai ci	4823
-再次	zai ci	12266
+在此	zai ci	12267
+再次	zai ci	12268
 再从	zai cong	258
 再三	zai san	538
 再送	zai song	113
@@ -45831,7 +45836,7 @@ sort: by_weight
 磁卡	ci ka	111
 刺客	ci ke	551
 此刻	ci ke	1515
-词库	ci ku	510
+词库	ci ku	534
 此话	ci hua	199
 伺候	ci hou	694
 此后	ci hou	1309
