@@ -623,17 +623,17 @@ class Dict:
             return [], []
         out, seen = [], set()
 
-        def add(word, nseg):
+        def add(word, nseg, weight):
             if word not in seen and len(out) < MAX_CANDS:
                 seen.add(word)
-                out.append((word, nseg))
+                out.append((word, nseg, weight))
 
         # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)
         letters0 = buf.replace("'", "")
         if len(letters0) == 1 and letters0 in self.initial_idx:
             for w, _wt in self.initial_idx[letters0]:
-                add(w, len(segs))
-            return out, segs
+                add(w, len(segs), _wt)
+            return [(w, n) for w, n, _ in out], segs
 
         for n in range(len(segs), 0, -1):
             sub = segs[:n]
@@ -645,7 +645,7 @@ class Dict:
                         pool.append((w, wt_, ki))
                 pool.sort(key=lambda x: (-x[1], x[2]))
                 for w, _wt, _ki in pool:
-                    add(w, n)
+                    add(w, n, _wt)
             # 整串完整匹配之后、逐级缩短之前,补「部分简拼」候选(消耗整个缓冲区):
             # 前面若干字全拼 + 末尾若干字只打声母,如 sej=设计、nihm=你好吗。
             # 与整串完整匹配同级(都吃满 len(segs)),排在其后、短前缀匹配之前
@@ -657,11 +657,12 @@ class Dict:
         if (self.abbr and len(letters) >= 2
                 and all(c in _ABBR_LETTERS for c in letters)):
             for w, _wt in self.abbr.get(letters, []):
-                add(w, len(segs))
+                add(w, len(segs), _wt)
         # 消耗输入更多的候选排在前(如 nbn:吃满 3 个字母的"能不能"应在只占 1 个的"嗯"前);
-        # 稳定排序,同消耗数内保持原有的权重次序
-        out.sort(key=lambda x: -x[1])
-        return out, segs
+        # 消耗数相同时按权重降序(如 az:简拼"安卓"应在末字简拼"阿紫"前);
+        # 稳定排序,权重也相同时保持插入次序(精确优先于模糊、全拼优先于简拼)
+        out.sort(key=lambda x: (-x[1], -x[2]))
+        return [(w, n) for w, n, _ in out], segs
 
     def _add_part_abbr(self, buf, nseg, add):
         """部分简拼:把末尾 t 个字母当作连续声母、前缀整段切成完整音节去查索引。
@@ -682,7 +683,7 @@ class Dict:
                     pool.append((w, wt_, ki + t * 100))  # t 越小(全拼越多)越靠前
         pool.sort(key=lambda x: (-x[1], x[2]))
         for w, _wt, _ki in pool:
-            add(w, nseg)
+            add(w, nseg, _wt)
 
     def bump(self, word, sub):
         """选词调权:把选中词的权重提为同拼音候选池里的最大权重 + 1(内存立即生效)。

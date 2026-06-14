@@ -364,9 +364,9 @@ class PinyinImeService : InputMethodService() {
         commitText(sym)
     }
 
-    /** 字母键应显示的字符:中文模式恒大写(拼音仍按小写输入);英文模式按 Shift 状态。 */
-    private fun displayChar(c: Char): Char =
-        if (cnMode || shiftState != SHIFT_OFF) c.uppercaseChar() else c
+    /** 字母键应显示的字符:键面恒大写(中文模式拼音仍按小写输入,
+     *  英文模式实际大小写由 Shift 状态另行决定,见 appendLetter)。 */
+    private fun displayChar(c: Char): Char = c.uppercaseChar()
 
     private fun shiftSymbol(): String = when (shiftState) {
         SHIFT_ONCE -> "⇪"   // 单次大写:箭头下方带横线

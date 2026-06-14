@@ -12,7 +12,7 @@ name: pinyin_simp
 version: "0.1"
 sort: by_weight
 ...
- 
+
 
 硬删除	yin san chua	207
 软删除	ruan san chu	136
@@ -34,7 +34,7 @@ sort: by_weight
 这样子	zhe yang zhi	2222
 是什么	shi sheng mo	569
 简拼	jian pin	4630
-安卓	an zhuo	19382
+安卓	an zhuo	19387
 就这样子	jiu zhe yang zhi	100
 鼥	ba	0
 釛	ba	0
@@ -7041,7 +7041,7 @@ sort: by_weight
 痕	hen	777
 狠	hen	3506
 恨	hen	4102
-很	hen	160208
+很	hen	160210
 鵆	heng	0
 胻	heng	0
 鑅	heng	1
@@ -12970,8 +12970,8 @@ sort: by_weight
 市	shi	18050
 使	shi	34422
 事	shi	1180981
-时	shi	1180983
-是	shi	1180984
+时	shi	1180987
+是	shi	1180988
 獣	shou	4
 綬	shou	5
 獸	shou	13
@@ -13080,7 +13080,7 @@ sort: by_weight
 属	shu	4306
 输	shu	5263
 树	shu	5939
-数	shu	13153
+数	shu	19045
 书	shu	19044
 鎙	shuo	1
 爍	shuo	4
@@ -14637,7 +14637,7 @@ sort: by_weight
 院	yuan	3519
 园	yuan	3927
 员	yuan	4026
-源	yuan	4426
+源	yuan	30886
 原	yuan	11213
 远	yuan	12498
 元	yuan	30885
@@ -28024,7 +28024,7 @@ sort: by_weight
 芦荟	lu hui	339
 陆军	lu jun	762
 路基	lu ji	233
-路径	lu jing	3091
+路径	lu jing	5644
 路桥	lu qiao	315
 录取	lu qu	2255
 鲁迅	lu xun	1416
@@ -35800,7 +35800,7 @@ sort: by_weight
 蜻蜓	qing ting	315
 倾听	qing ting	815
 青铜	qing tong	401
-请你	qing ni	3595
+请你	qing ni	3597
 青年	qing nian	5276
 青鸟	qing niao	225
 请您	qing nin	4652
@@ -36251,7 +36251,7 @@ sort: by_weight
 选人	xuan ren	169
 悬在	xuan zai	157
 玄奘	xuan zang	139
-选择	xuan ze	41445
+选择	xuan ze	246264
 选自	xuan zi	117
 选材	xuan cai	155
 轩辕	xuan yuan	478
@@ -50696,7 +50696,6 @@ sort: by_weight
 阿强	a qiang	146
 阿信	a xin	159
 阿朱	a zhu	112
-阿紫	a zi	19381
 阿三	a san	237
 阿斯	a si	409
 阿雅	a ya	176
@@ -50852,8 +50851,8 @@ sort: by_weight
 安信	an xin	177
 安心	an xin	1723
 按需	an xu	144
-安装	an zhuang	19379
-按照	an zhao	19307
+安装	an zhuang	19384
+按照	an zhao	19386
 按着	an zhe	294
 安贞	an zhen	109
 安置	an zhi	1397
