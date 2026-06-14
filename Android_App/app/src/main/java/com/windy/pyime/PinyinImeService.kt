@@ -93,6 +93,7 @@ class PinyinImeService : InputMethodService() {
         'r' to "/",
         't' to "\\",
         'y' to "!",
+        'u' to "?",
     )
 
     override fun onCreate() {
