@@ -12,8 +12,8 @@ import java.util.UUID
 /**
  * 剪贴板历史 + 常用语(含文件夹)的本地 SQLite 存储。
  *
- * 三张表都带 uuid(稳定主键)、updated_at(毫秒)、deleted(软删除 0/1),
- * 为第二阶段与 Cloudflare D1 的时间戳增量双向同步、删除传播预留结构。
+ * 三张表都带 uuid(稳定主键)、updated_at(毫秒),用于与 Cloudflare D1 的
+ * 时间戳增量双向同步。删除一律为硬删除(直接从表中删行,不留软删除墓碑)。
  */
 class DataStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
@@ -33,20 +33,20 @@ class DataStore(context: Context) :
         db.execSQL(
             "CREATE TABLE clipboard (" +
                 "uuid TEXT PRIMARY KEY, content TEXT NOT NULL, " +
-                "updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)"
+                "updated_at INTEGER NOT NULL)"
         )
         db.execSQL(
             "CREATE TABLE phrase_folder (" +
                 "uuid TEXT PRIMARY KEY, name TEXT NOT NULL, " +
                 "sort_order INTEGER NOT NULL DEFAULT 0, " +
-                "updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)"
+                "updated_at INTEGER NOT NULL)"
         )
         db.execSQL(
             "CREATE TABLE phrase (" +
                 "uuid TEXT PRIMARY KEY, folder_uuid TEXT, content TEXT NOT NULL, " +
                 "last_used_at INTEGER NOT NULL DEFAULT 0, " +
                 "sort_order INTEGER NOT NULL DEFAULT 0, " +
-                "updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)"
+                "updated_at INTEGER NOT NULL)"
         )
     }
 
@@ -59,18 +59,47 @@ class DataStore(context: Context) :
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE phrase_folder ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         }
+        // v4:去除 deleted 列(改用硬删除)。重建三张表并顺手清掉历史软删除行(deleted=1)。
+        // 用建新表→拷数据→删旧表→改名的方式,兼容所有 Android 自带的 SQLite 版本。
+        if (oldVersion < 4) {
+            db.execSQL("CREATE TABLE clipboard_new (" +
+                "uuid TEXT PRIMARY KEY, content TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO clipboard_new (uuid, content, updated_at) " +
+                "SELECT uuid, content, updated_at FROM clipboard WHERE deleted = 0")
+            db.execSQL("DROP TABLE clipboard")
+            db.execSQL("ALTER TABLE clipboard_new RENAME TO clipboard")
+
+            db.execSQL("CREATE TABLE phrase_folder_new (" +
+                "uuid TEXT PRIMARY KEY, name TEXT NOT NULL, " +
+                "sort_order INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO phrase_folder_new (uuid, name, sort_order, updated_at) " +
+                "SELECT uuid, name, sort_order, updated_at FROM phrase_folder WHERE deleted = 0")
+            db.execSQL("DROP TABLE phrase_folder")
+            db.execSQL("ALTER TABLE phrase_folder_new RENAME TO phrase_folder")
+
+            db.execSQL("CREATE TABLE phrase_new (" +
+                "uuid TEXT PRIMARY KEY, folder_uuid TEXT, content TEXT NOT NULL, " +
+                "last_used_at INTEGER NOT NULL DEFAULT 0, " +
+                "sort_order INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO phrase_new " +
+                "(uuid, folder_uuid, content, last_used_at, sort_order, updated_at) " +
+                "SELECT uuid, folder_uuid, content, last_used_at, sort_order, updated_at " +
+                "FROM phrase WHERE deleted = 0")
+            db.execSQL("DROP TABLE phrase")
+            db.execSQL("ALTER TABLE phrase_new RENAME TO phrase")
+        }
     }
 
     private fun now() = System.currentTimeMillis()
     private fun newUuid() = UUID.randomUUID().toString()
 
     // ---------------------------------------------------------------- 剪贴板
-    /** 最近的剪贴板条目(未删除),按更新时间倒序。 */
+    /** 最近的剪贴板条目,按更新时间倒序。 */
     fun recentClips(limit: Int = 50): List<Clip> {
         val out = ArrayList<Clip>()
         readableDatabase.rawQuery(
             "SELECT uuid, content, updated_at FROM clipboard " +
-                "WHERE deleted = 0 ORDER BY updated_at DESC LIMIT ?",
+                "ORDER BY updated_at DESC LIMIT ?",
             arrayOf(limit.toString())
         ).use { c ->
             while (c.moveToNext()) out.add(Clip(c.getString(0), c.getString(1), c.getLong(2)))
@@ -80,13 +109,13 @@ class DataStore(context: Context) :
 
     /**
      * 把内容存入剪贴板历史并置顶:
-     * 若已存在相同内容(未删除),只刷新它的 updated_at;否则新插入一条。
+     * 若已存在相同内容,只刷新它的 updated_at;否则新插入一条。
      */
     fun upsertClipTop(content: String) {
         val db = writableDatabase
         val ts = now()
         db.rawQuery(
-            "SELECT uuid FROM clipboard WHERE content = ? AND deleted = 0 LIMIT 1",
+            "SELECT uuid FROM clipboard WHERE content = ? LIMIT 1",
             arrayOf(content)
         ).use { c ->
             if (c.moveToNext()) {
@@ -101,7 +130,6 @@ class DataStore(context: Context) :
             put("uuid", newUuid())
             put("content", content)
             put("updated_at", ts)
-            put("deleted", 0)
         })
     }
 
@@ -122,7 +150,7 @@ class DataStore(context: Context) :
         val out = ArrayList<Folder>()
         readableDatabase.rawQuery(
             "SELECT uuid, name, updated_at FROM phrase_folder " +
-                "WHERE deleted = 0 ORDER BY sort_order ASC, updated_at ASC",
+                "ORDER BY sort_order ASC, updated_at ASC",
             null
         ).use { c ->
             while (c.moveToNext()) out.add(Folder(c.getString(0), c.getString(1), c.getLong(2)))
@@ -138,7 +166,6 @@ class DataStore(context: Context) :
             put("name", name)
             put("sort_order", nextFolderSortOrder(db))   // 排到末尾
             put("updated_at", now())
-            put("deleted", 0)
         })
         return uuid
     }
@@ -146,7 +173,7 @@ class DataStore(context: Context) :
     /** 当前最大文件夹 sort_order + 1。 */
     private fun nextFolderSortOrder(db: SQLiteDatabase): Long {
         db.rawQuery(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM phrase_folder WHERE deleted = 0", null
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM phrase_folder", null
         ).use { c -> if (c.moveToNext()) return c.getLong(0) }
         return 0
     }
@@ -174,12 +201,10 @@ class DataStore(context: Context) :
         }, "uuid = ?", arrayOf(uuid))
     }
 
-    /** 软删除文件夹(留墓碑供同步),并连带硬删除其下所有常用语条目。 */
+    /** 硬删除文件夹,并连带硬删除其下所有常用语条目。 */
     fun deleteFolder(uuid: String) {
         val db = writableDatabase
-        db.update("phrase_folder", ContentValues().apply {
-            put("deleted", 1); put("updated_at", now())
-        }, "uuid = ?", arrayOf(uuid))
+        db.delete("phrase_folder", "uuid = ?", arrayOf(uuid))
         db.delete("phrase", "folder_uuid = ?", arrayOf(uuid))
     }
 
@@ -204,7 +229,7 @@ class DataStore(context: Context) :
 
     fun phrasesIn(folderUuid: String?): List<Phrase> {
         val base = "SELECT uuid, folder_uuid, content, last_used_at, updated_at FROM phrase " +
-            "WHERE deleted = 0 AND "
+            "WHERE "
         // sort_order 为手动拖动排序;相同时(如旧数据)再按 updated_at 保持原顺序
         val order = "ORDER BY sort_order ASC, updated_at ASC"
         return if (folderUuid == null) {
@@ -218,7 +243,7 @@ class DataStore(context: Context) :
     fun recentPhrases(limit: Int = 30): List<Phrase> {
         return readPhrases(
             "SELECT uuid, folder_uuid, content, last_used_at, updated_at FROM phrase " +
-                "WHERE deleted = 0 AND last_used_at > 0 ORDER BY last_used_at DESC LIMIT $limit",
+                "WHERE last_used_at > 0 ORDER BY last_used_at DESC LIMIT $limit",
             null
         )
     }
@@ -233,7 +258,6 @@ class DataStore(context: Context) :
             put("last_used_at", 0)
             put("sort_order", nextSortOrder(db, folderUuid))   // 排到本文件夹末尾
             put("updated_at", now())
-            put("deleted", 0)
         })
         return uuid
     }
@@ -241,7 +265,7 @@ class DataStore(context: Context) :
     /** 取某文件夹内当前最大 sort_order + 1,作为新条目的排序值。 */
     private fun nextSortOrder(db: SQLiteDatabase, folderUuid: String?): Long {
         val sql = "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM phrase " +
-            "WHERE deleted = 0 AND " +
+            "WHERE " +
             if (folderUuid == null) "folder_uuid IS NULL" else "folder_uuid = ?"
         val args = if (folderUuid == null) null else arrayOf(folderUuid)
         db.rawQuery(sql, args).use { c -> if (c.moveToNext()) return c.getLong(0) }
@@ -284,13 +308,13 @@ class DataStore(context: Context) :
     }
 
     // ---------------------------------------------------------------- 同步导出/导入
-    /** 导出全部行(含已删除),供与云端比较/上传。字段名即列名。 */
+    /** 导出全部行,供与云端比较/上传。字段名即列名。 */
     fun exportFolders(): JSONArray =
-        queryToJson("SELECT uuid, name, sort_order, updated_at, deleted FROM phrase_folder")
+        queryToJson("SELECT uuid, name, sort_order, updated_at FROM phrase_folder")
 
     fun exportPhrases(): JSONArray =
         queryToJson(
-            "SELECT uuid, folder_uuid, content, last_used_at, sort_order, updated_at, deleted FROM phrase"
+            "SELECT uuid, folder_uuid, content, last_used_at, sort_order, updated_at FROM phrase"
         )
 
     private fun queryToJson(sql: String): JSONArray {
@@ -319,7 +343,6 @@ class DataStore(context: Context) :
         val cv = ContentValues().apply {
             put("name", o.getString("name"))
             put("updated_at", o.optLong("updated_at"))
-            put("deleted", o.optInt("deleted"))
         }
         val rows = db.update("phrase_folder", cv, "uuid = ?", arrayOf(uuid))
         if (rows == 0) {
@@ -339,7 +362,6 @@ class DataStore(context: Context) :
             put("content", o.getString("content"))
             put("last_used_at", o.optLong("last_used_at"))
             put("updated_at", o.optLong("updated_at"))
-            put("deleted", o.optInt("deleted"))
         }
         val rows = db.update("phrase", cv, "uuid = ?", arrayOf(uuid))
         if (rows == 0) {
@@ -359,6 +381,6 @@ class DataStore(context: Context) :
 
     companion object {
         const val DB_NAME = "pyime_data.db"
-        const val DB_VERSION = 3
+        const val DB_VERSION = 4
     }
 }

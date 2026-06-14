@@ -6,13 +6,13 @@ import org.json.JSONObject
 /**
  * 增量双向同步的核心逻辑(不含网络/UI)。
  *
- * 比较规则:按 uuid 匹配本地与云端,且只把「活」数据(deleted != 1)算作「该端拥有」。
- *  - 仅一端有「活」数据(另一端没有或只有已删墓碑)-> 差异项,归有数据的那一端(补齐到另一端)
- *  - 两端都有「活」数据  -> 视为一致;内容若被编辑(updated_at 不同)按较新方传播
- *  - 两端都没有「活」数据(都没有或都已删)-> 无差异
+ * 比较规则:按 uuid 匹配本地与云端(删除一律为硬删除,行不存在即「该端没有」)。
+ *  - 仅一端有  -> 差异项,归有数据的那一端(补齐到另一端)
+ *  - 两端都有  -> 视为一致;内容若被编辑(updated_at 不同)按较新方传播
+ *  - 两端都没有 -> 无差异
  *
- * 注意:已删除的一端不再算「拥有」该条目,因此墓碑不会显示在已删的那一端。
- * 删除的传播由比较面板里长按「删除该端数据」显式完成,而非靠时间戳自动覆盖。
+ * 删除的传播由比较面板里长按「删除该端数据」显式完成(本地直接删行、云端发删除请求),
+ * 而非靠时间戳自动覆盖。
  *
  * 执行同步时,对每个(未被用户排除的)差异项:
  *  - winner 来自云端 -> 写入本地
@@ -67,34 +67,27 @@ class SyncEngine(private val ds: DataStore) {
         for (uuid in allUuids) {
             val l = local[uuid]
             val r = remote[uuid]
-            // 只有未被软删除的记录才算「该端拥有」这条数据;墓碑(deleted=1)视为没有。
-            val lLive = l != null && l.optInt("deleted") != 1
-            val rLive = r != null && r.optInt("deleted") != 1
             when {
-                // 仅本地有活数据(云端没有或已删)-> 归本地,待补到云端
-                lLive && !rLive ->
-                    out.add(Diff(kind, uuid, label(l!!), suffix("仅本地", l), l, Origin.LOCAL))
-                // 仅云端有活数据 -> 归云端,待写入本地
-                rLive && !lLive ->
-                    out.add(Diff(kind, uuid, label(r!!), suffix("仅云端", r), r, Origin.REMOTE))
-                // 两端都有活数据:内容若被编辑(updated_at 不同)按较新方传播
-                lLive && rLive -> {
-                    val lt = l!!.optLong("updated_at"); val rt = r!!.optLong("updated_at")
+                // 仅本地有 -> 归本地,待补到云端
+                l != null && r == null ->
+                    out.add(Diff(kind, uuid, label(l), "仅本地", l, Origin.LOCAL))
+                // 仅云端有 -> 归云端,待写入本地
+                r != null && l == null ->
+                    out.add(Diff(kind, uuid, label(r), "仅云端", r, Origin.REMOTE))
+                // 两端都有:内容若被编辑(updated_at 不同)按较新方传播
+                l != null && r != null -> {
+                    val lt = l.optLong("updated_at"); val rt = r.optLong("updated_at")
                     if (lt != rt) {
                         val winner = if (lt > rt) l else r
                         val origin = if (lt > rt) Origin.LOCAL else Origin.REMOTE
                         val who = if (lt > rt) "本地较新" else "云端较新"
-                        out.add(Diff(kind, uuid, label(winner), suffix(who, winner), winner, origin))
+                        out.add(Diff(kind, uuid, label(winner), who, winner, origin))
                     }
                 }
-                // 两端都没有活数据 -> 无差异
             }
         }
         return out
     }
-
-    private fun suffix(who: String, row: JSONObject): String =
-        if (row.optInt("deleted") == 1) "$who · 已删除" else who
 
     private fun indexByUuid(arr: JSONArray): Map<String, JSONObject> {
         val m = HashMap<String, JSONObject>()

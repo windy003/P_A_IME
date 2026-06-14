@@ -12,7 +12,8 @@ import java.net.URL
  *   POST /register  头 X-Admin-Key   body {username,password}  仅管理员可注册
  *   POST /login                      body {username,password}  -> {token,username}
  *   POST /pull      头 X-Auth-Token                            -> {clipboard,folders,phrases}
- *   POST /push      头 X-Auth-Token  body {clipboard,folders,phrases}
+ *   POST /push      头 X-Auth-Token  body {folders,phrases} 写入/更新;
+ *                                    body {del:{folders:[uuid],phrases:[uuid]}} 按 uuid 硬删除
  *
  * pull/push 需要先 login 拿到 token 并用本实例的 token 字段。
  * 所有方法均为阻塞网络调用,必须在后台线程使用。
@@ -60,6 +61,16 @@ class SyncClient(baseUrl: String, private val token: String? = null) {
         post("/push", JSONObject().apply {
             put("folders", folders)
             put("phrases", phrases)
+        }, authed = true)
+    }
+
+    /** 删除云端的文件夹/常用语(按 uuid 硬删除);参数为各自的 uuid 字符串数组。 */
+    fun pushDelete(folders: JSONArray, phrases: JSONArray) {
+        post("/push", JSONObject().apply {
+            put("del", JSONObject().apply {
+                put("folders", folders)
+                put("phrases", phrases)
+            })
         }, authed = true)
     }
 

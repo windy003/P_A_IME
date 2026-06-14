@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS clipboard (
   uuid       TEXT NOT NULL,
   content    TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
-  deleted    INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (owner, uuid)
 );
 
@@ -24,7 +23,6 @@ CREATE TABLE IF NOT EXISTS phrase_folder (
   name       TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
-  deleted    INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (owner, uuid)
 );
 
@@ -36,6 +34,5 @@ CREATE TABLE IF NOT EXISTS phrase (
   last_used_at INTEGER NOT NULL DEFAULT 0,
   sort_order   INTEGER NOT NULL DEFAULT 0,
   updated_at   INTEGER NOT NULL,
-  deleted      INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (owner, uuid)
 );

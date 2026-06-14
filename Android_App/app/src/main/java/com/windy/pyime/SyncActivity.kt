@@ -343,8 +343,7 @@ class SyncActivity : Activity() {
     private fun entryNode(origin: SyncEngine.Origin, d: SyncEngine.Diff): View {
         val raw = d.winner.optString("content").replace("\n", " ")
         val text = if (raw.length > 40) raw.take(40) + "…" else raw
-        val del = if (d.winner.optInt("deleted") == 1) " · 已删" else ""
-        return treeRow(2, "entry:${d.uuid}", "📄 $text$del", expandable = false) {
+        return treeRow(2, "entry:${d.uuid}", "📄 $text", expandable = false) {
             confirmDelete(origin, listOf(d), "条目「$text」")
         }
     }
@@ -361,7 +360,7 @@ class SyncActivity : Activity() {
             .show()
     }
 
-    /** 真正删除:本地端写软删除标记;云端端推一条 deleted=1 记录。完成后从树移除。 */
+    /** 真正删除:本地端直接删行;云端端发删除请求(按 uuid 硬删除)。完成后从树移除。 */
     private fun deleteFromEnd(origin: SyncEngine.Origin, items: List<SyncEngine.Diff>) {
         toast("删除中…")
         Thread {
@@ -374,17 +373,14 @@ class SyncActivity : Activity() {
                     }
                 } else {
                     val (url, token) = session() ?: throw RuntimeException("未登录")
-                    val folders = org.json.JSONArray()
-                    val phrases = org.json.JSONArray()
-                    for (d in items) {
-                        val row = tombstone(d.winner)
-                        when (d.kind) {
-                            SyncEngine.Kind.FOLDER -> folders.put(row)
-                            SyncEngine.Kind.PHRASE -> phrases.put(row)
-                            SyncEngine.Kind.CLIP -> {}
-                        }
+                    val delFolders = org.json.JSONArray()
+                    val delPhrases = org.json.JSONArray()
+                    for (d in items) when (d.kind) {
+                        SyncEngine.Kind.FOLDER -> delFolders.put(d.uuid)
+                        SyncEngine.Kind.PHRASE -> delPhrases.put(d.uuid)
+                        SyncEngine.Kind.CLIP -> {}
                     }
-                    SyncClient(url, token).push(folders, phrases)
+                    SyncClient(url, token).pushDelete(delFolders, delPhrases)
                 }
                 ui.post {
                     diffs.removeAll(items.toSet())
@@ -396,13 +392,6 @@ class SyncActivity : Activity() {
             }
         }.start()
     }
-
-    /** 克隆一行并标记为删除(deleted=1、刷新 updated_at),用于推到云端。 */
-    private fun tombstone(src: org.json.JSONObject): org.json.JSONObject =
-        org.json.JSONObject(src.toString()).apply {
-            put("deleted", 1)
-            put("updated_at", System.currentTimeMillis())
-        }
 
     /** 一个可折叠的树节点行:缩进 + 三角 + 文本;可点折叠,可长按删除。 */
     private fun treeRow(
