@@ -58,6 +58,8 @@ class PinyinImeService : InputMethodService() {
 
     // 剪贴板/常用语
     private var dataStore: DataStore? = null
+    private var modeIndicator: View? = null        // 切换中/英时顶部弹出的提示色块
+    private val hideIndicator = Runnable { modeIndicator?.visibility = View.GONE }
     private var keyboardView: View? = null         // 键盘整体
     private var panelView: View? = null            // 工具面板(剪贴板/常用语)
     private var panelContent: LinearLayout? = null // 工具面板内容区(Tab 切换时重建)
@@ -179,6 +181,22 @@ class PinyinImeService : InputMethodService() {
         root.addView(panel)
         root.addView(cursor)
         root.addView(symbol)
+
+        // 切换中/英模式时在面板顶部居中弹出的提示色块(默认隐藏,见 showModeIndicator)
+        val indicator = View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(panelBgColor())
+                cornerRadius = dp(4).toFloat()
+            }
+            layoutParams = FrameLayout.LayoutParams(dp(28), dp(28)).apply {
+                gravity = Gravity.TOP or Gravity.START
+                topMargin = dp(6)
+                marginStart = dp(6)
+            }
+            visibility = View.GONE
+        }
+        modeIndicator = indicator
+        root.addView(indicator)
         return root
     }
 
@@ -1336,11 +1354,25 @@ class PinyinImeService : InputMethodService() {
         updateSelectKey()
     }
 
+    /** 模式提示色块颜色:中文模式红色,英文模式紫色。 */
+    private fun panelBgColor(): Int =
+        Color.parseColor(if (cnMode) "#F44336" else "#9C27B0")
+
+    /** 切换模式时在面板上方弹出一个小方块(中文红/英文紫),2 秒后自动消失。 */
+    private fun showModeIndicator() {
+        val v = modeIndicator ?: return
+        (v.background as? GradientDrawable)?.setColor(panelBgColor())
+        v.removeCallbacks(hideIndicator)
+        v.visibility = View.VISIBLE
+        v.postDelayed(hideIndicator, 2000)
+    }
+
     private fun toggleMode() {
         if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
         cnMode = !cnMode
         modeKey?.text = if (cnMode) "中" else "EN"
         updateLetterCaps()
+        showModeIndicator()
     }
 
     private fun commitText(t: String) {
