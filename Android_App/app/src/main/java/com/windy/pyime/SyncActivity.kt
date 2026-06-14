@@ -54,7 +54,8 @@ class SyncActivity : Activity() {
 
     /** 返回 (url, token);任一为空视为未登录。 */
     private fun session(): Pair<String, String>? {
-        val url = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
+        val stored = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
+        val url = if (stored.isNotEmpty()) stored else DEFAULT_SYNC_URL.trim()
         val token = prefs().getString(KEY_SYNC_TOKEN, "")?.trim().orEmpty()
         return if (url.isNotEmpty() && token.isNotEmpty()) url to token else null
     }
@@ -69,7 +70,10 @@ class SyncActivity : Activity() {
         val urlEdit = EditText(this).apply {
             hint = "Worker 地址,如 https://pyime-sync.xxx.workers.dev"
             inputType = InputType.TYPE_TEXT_VARIATION_URI
-            setText(prefs().getString(KEY_SYNC_URL, ""))
+            val saved = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
+            setText(if (saved.isNotEmpty()) saved else DEFAULT_SYNC_URL)
+            // 已在 app 中预置地址时,隐藏输入框,用户只需填账号密码
+            if (DEFAULT_SYNC_URL.isNotEmpty()) visibility = android.view.View.GONE
             layoutParams = mw()
         }
         val userEdit = EditText(this).apply {
@@ -157,7 +161,14 @@ class SyncActivity : Activity() {
         val urlEdit = EditText(this).apply {
             hint = "Worker 地址"
             inputType = InputType.TYPE_TEXT_VARIATION_URI
-            setText(if (prefillUrl.isNotEmpty()) prefillUrl else prefs().getString(KEY_SYNC_URL, ""))
+            val saved = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
+            setText(when {
+                prefillUrl.isNotEmpty() -> prefillUrl
+                saved.isNotEmpty() -> saved
+                else -> DEFAULT_SYNC_URL
+            })
+            // 已在 app 中预置地址时,隐藏输入框
+            if (DEFAULT_SYNC_URL.isNotEmpty()) visibility = android.view.View.GONE
             layoutParams = mw()
         }
         val adminEdit = EditText(this).apply {
@@ -480,6 +491,10 @@ class SyncActivity : Activity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+        // 预置的 Worker 地址:填上你部署的 workers.dev 网址(如 "https://pyime.xxx.workers.dev")。
+        // 非空时,登录/注册页会自动用它,且不再显示「Worker 地址」输入框;留空则维持手动填写。
+        const val DEFAULT_SYNC_URL = "https://pyime.mybrowser.workers.dev"
+
         const val KEY_SYNC_URL = "sync_url"
         const val KEY_SYNC_USER = "sync_user"
         const val KEY_SYNC_TOKEN = "sync_token"
