@@ -14,7 +14,9 @@ sort: by_weight
 ...
  
 
-
+硬删除	yin san chua	207
+软删除	ruan san chu	136
+删了	san le	1371硬删除	yin san chua	100
 这里的	zhe li de	146
 是什么意思	shi sheng mo yi si	100
 加了	jia le	100
@@ -75,8 +77,8 @@ sort: by_weight
 巴	ba	3193
 爸	ba	3625
 八	ba	6677
-把	ba	385212
-吧	ba	385211
+把	ba	385214
+吧	ba	385215
 竡	bai	0
 拝	bai	2
 擘	bai	3
@@ -5191,7 +5193,7 @@ sort: by_weight
 岭	ling	1178
 玲	ling	1689
 凌	ling	1764
-零	ling	3091
+零	ling	44387
 灵	ling	3722
 领	ling	4061
 令	ling	7764
@@ -12969,7 +12971,7 @@ sort: by_weight
 使	shi	34422
 事	shi	1180981
 时	shi	1180983
-是	shi	1180982
+是	shi	1180984
 獣	shou	4
 綬	shou	5
 獸	shou	13
@@ -13119,7 +13121,7 @@ sort: by_weight
 軟	ruan	18
 朊	ruan	22
 阮	ruan	686
-软	ruan	3419
+软	ruan	12577
 橍	run	0
 閠	run	0
 閏	run	3
@@ -15820,7 +15822,7 @@ sort: by_weight
 迎	ying	1368
 营	ying	1701
 影	ying	3209
-硬	ying	4526
+硬	ying	20244
 英	ying	4588
 赢	ying	5076
 应	ying	20243
@@ -31242,7 +31244,7 @@ sort: by_weight
 喊声	han sheng	131
 韩式	han shi	153
 函授	han shou	172
-函数	han shu	5204
+函数	han shu	166935
 含税	han shui	232
 汗水	han shui	966
 汉人	han ren	470
@@ -35810,7 +35812,7 @@ sort: by_weight
 清丽	qing li	148
 情理	qing li	180
 倾力	qing li	199
-清理	qing li	3594
+清理	qing li	3596
 清廉	qing lian	169
 清亮	qing liang	137
 清凉	qing liang	710

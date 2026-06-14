@@ -112,11 +112,9 @@ class DataStore(context: Context) :
         }, "uuid = ?", arrayOf(uuid))
     }
 
+    /** 硬删除:剪贴板不参与同步,直接从表中删除即可(无需墓碑)。 */
     fun deleteClip(uuid: String) {
-        writableDatabase.update("clipboard", ContentValues().apply {
-            put("deleted", 1)
-            put("updated_at", now())
-        }, "uuid = ?", arrayOf(uuid))
+        writableDatabase.delete("clipboard", "uuid = ?", arrayOf(uuid))
     }
 
     // ---------------------------------------------------------------- 文件夹
@@ -176,16 +174,13 @@ class DataStore(context: Context) :
         }, "uuid = ?", arrayOf(uuid))
     }
 
-    /** 删除文件夹,并连带软删除其下所有常用语条目。 */
+    /** 软删除文件夹(留墓碑供同步),并连带硬删除其下所有常用语条目。 */
     fun deleteFolder(uuid: String) {
         val db = writableDatabase
-        val ts = now()
         db.update("phrase_folder", ContentValues().apply {
-            put("deleted", 1); put("updated_at", ts)
+            put("deleted", 1); put("updated_at", now())
         }, "uuid = ?", arrayOf(uuid))
-        db.update("phrase", ContentValues().apply {
-            put("deleted", 1); put("updated_at", ts)
-        }, "folder_uuid = ?", arrayOf(uuid))
+        db.delete("phrase", "folder_uuid = ?", arrayOf(uuid))
     }
 
     // ---------------------------------------------------------------- 常用语
@@ -283,18 +278,13 @@ class DataStore(context: Context) :
         }, "uuid = ?", arrayOf(uuid))
     }
 
+    /** 硬删除:常用语不留软删除墓碑,直接从表中删除。 */
     fun deletePhrase(uuid: String) {
-        writableDatabase.update("phrase", ContentValues().apply {
-            put("deleted", 1)
-            put("updated_at", now())
-        }, "uuid = ?", arrayOf(uuid))
+        writableDatabase.delete("phrase", "uuid = ?", arrayOf(uuid))
     }
 
     // ---------------------------------------------------------------- 同步导出/导入
     /** 导出全部行(含已删除),供与云端比较/上传。字段名即列名。 */
-    fun exportClipboard(): JSONArray =
-        queryToJson("SELECT uuid, content, updated_at, deleted FROM clipboard")
-
     fun exportFolders(): JSONArray =
         queryToJson("SELECT uuid, name, sort_order, updated_at, deleted FROM phrase_folder")
 
@@ -320,14 +310,6 @@ class DataStore(context: Context) :
             }
         }
         return arr
-    }
-
-    /** 把某行的最终状态写入本地(INSERT OR REPLACE,按 uuid 覆盖)。 */
-    fun applyClipboardRow(o: JSONObject) {
-        writableDatabase.execSQL(
-            "INSERT OR REPLACE INTO clipboard (uuid, content, updated_at, deleted) VALUES (?,?,?,?)",
-            arrayOf(o.getString("uuid"), o.getString("content"), o.optLong("updated_at"), o.optInt("deleted"))
-        )
     }
 
     /** 排序不参与同步:已存在的文件夹只覆盖内容字段、保留本地 sort_order;新行排到本地末尾。 */
@@ -365,43 +347,6 @@ class DataStore(context: Context) :
             cv.put("sort_order", nextSortOrder(db, folderUuid))
             db.insert("phrase", null, cv)
         }
-    }
-
-    /** 仅保留最近 limit 条未删除剪贴板,其余软删除;返回被软删除的行(供同步上传)。 */
-    fun trimClipboardKeepRecent(limit: Int): JSONArray {
-        val toDelete = ArrayList<String>()
-        readableDatabase.rawQuery(
-            "SELECT uuid FROM clipboard WHERE deleted = 0 ORDER BY updated_at DESC", null
-        ).use { c ->
-            var i = 0
-            while (c.moveToNext()) { if (i >= limit) toDelete.add(c.getString(0)); i++ }
-        }
-        val out = JSONArray()
-        if (toDelete.isEmpty()) return out
-        val db = writableDatabase
-        val ts = now()
-        for (uuid in toDelete) {
-            db.update("clipboard", ContentValues().apply {
-                put("deleted", 1); put("updated_at", ts)
-            }, "uuid = ?", arrayOf(uuid))
-        }
-        // 返回这些行的最终状态(deleted=1),以便同步推到云端
-        readableDatabase.rawQuery(
-            "SELECT uuid, content, updated_at, deleted FROM clipboard WHERE uuid IN (${
-                toDelete.joinToString(",") { "?" }
-            })", toDelete.toTypedArray()
-        ).use { c ->
-            val cols = c.columnNames
-            while (c.moveToNext()) {
-                val obj = JSONObject()
-                for (i in cols.indices) {
-                    if (c.getType(i) == Cursor.FIELD_TYPE_INTEGER) obj.put(cols[i], c.getLong(i))
-                    else obj.put(cols[i], c.getString(i))
-                }
-                out.put(obj)
-            }
-        }
-        return out
     }
 
     /** 切换账号登录时清空本机同步数据(三张表整表删除),改用新账号的云端数据。 */
