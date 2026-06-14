@@ -907,9 +907,11 @@ class Engine:
     def on_key_up(self, vk):
         if vk in SHIFT_KEYS and self.shift_tap:
             self.shift_tap = False
-            if self.buf:  # 组词中单击 Shift:原始字母上屏并取消候选,不切换中英
+            if self.buf:  # 组词中单击 Shift:原始字母上屏并取消候选,同时切回英文模式
                 self.commit(self.buf.replace("'", ""))
                 self.clear()
+                if self.cn_mode:
+                    self.toggle()  # 上屏后从中文切到英文模式
             else:
                 self.toggle()
         return False
