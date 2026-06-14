@@ -26,6 +26,12 @@ MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
 ENABLE_SHOUPIN = True  # 简拼:每个音节只打声母,如 zg->这个/中国、bj->北京、nh->你好
 MAX_SHOUPIN_PER_KEY = 80  # 每个声母串最多保留多少候选(按词频)
 
+ENABLE_SINGLE_INITIAL = True  # 单字母:打一个字母即列出所有该拼音首字母开头的词,按权重
+MAX_SINGLE_INITIAL_PER_KEY = 80  # 每个首字母最多保留多少候选(按词频)
+
+ENABLE_TAIL_INITIAL = True  # 末字简拼:前面音节全拼、最后一个字只打声母,如 sej->设计、jisuanj->计算机
+MAX_TAIL_INITIAL_PER_KEY = 80  # 每个「前缀+末声母」键最多保留多少候选(按词频)
+
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
@@ -552,6 +558,35 @@ class Dict:
             for v in self.abbr.values():
                 v.sort(key=lambda x: -x[1])
                 del v[MAX_SHOUPIN_PER_KEY:]
+        # 单字母索引:拼音首字母 -> [(词, 权重)],按词频降序、截断。
+        # 用 py[0] 归桶,所以 "lao shi"=老师 也归在 'l' 下,zh/ch/sh 归在 z/c/s 下
+        self.initial_idx = {}
+        if ENABLE_SINGLE_INITIAL:
+            for py, words in self.table.items():
+                c = py[0]
+                if c in _ABBR_LETTERS:
+                    self.initial_idx.setdefault(c, []).extend(words)
+            for v in self.initial_idx.values():
+                v.sort(key=lambda x: -x[1])
+                del v[MAX_SINGLE_INITIAL_PER_KEY:]
+        # 部分简拼索引:前 p 个字全拼 + 末尾若干字只打声母。键=(前缀全拼, 末尾声母串)。
+        # 如 你好吗 ni hao ma -> ("ni","hm") 和 ("ni hao","m");设计 she ji -> ("she","j")
+        self.part_abbr = {}
+        if ENABLE_TAIL_INITIAL:
+            for py, words in self.table.items():
+                sylls = py.split(" ")
+                n = len(sylls)
+                if n < 2:
+                    continue
+                for p in range(1, n):  # 前 p 个全拼,后 n-p 个取声母
+                    inits = "".join(s[0] for s in sylls[p:])
+                    if not all(c in _INITIALS_1 for c in inits):
+                        continue  # 末尾有零声母音节(a/e/o 开头)时不能用声母简拼
+                    key = (" ".join(sylls[:p]), inits)
+                    self.part_abbr.setdefault(key, []).extend(words)
+            for v in self.part_abbr.values():
+                v.sort(key=lambda x: -x[1])
+                del v[MAX_TAIL_INITIAL_PER_KEY:]
 
     def segment(self, buf):
         """把字母串贪心切分成音节列表;切不动时退化为单字母段。"""
@@ -593,6 +628,13 @@ class Dict:
                 seen.add(word)
                 out.append((word, nseg))
 
+        # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)
+        letters0 = buf.replace("'", "")
+        if len(letters0) == 1 and letters0 in self.initial_idx:
+            for w, _wt in self.initial_idx[letters0]:
+                add(w, len(segs))
+            return out, segs
+
         for n in range(len(segs), 0, -1):
             sub = segs[:n]
             complete = all(s in self.syllables for s in sub)
@@ -604,6 +646,11 @@ class Dict:
                 pool.sort(key=lambda x: (-x[1], x[2]))
                 for w, _wt, _ki in pool:
                     add(w, n)
+            # 整串完整匹配之后、逐级缩短之前,补「部分简拼」候选(消耗整个缓冲区):
+            # 前面若干字全拼 + 末尾若干字只打声母,如 sej=设计、nihm=你好吗。
+            # 与整串完整匹配同级(都吃满 len(segs)),排在其后、短前缀匹配之前
+            if n == len(segs):
+                self._add_part_abbr(buf, len(segs), add)
 
         # 简拼:整串全是声母字母时,按声母串补充候选(消耗整个缓冲区)
         letters = buf.replace("'", "")
@@ -615,6 +662,27 @@ class Dict:
         # 稳定排序,同消耗数内保持原有的权重次序
         out.sort(key=lambda x: -x[1])
         return out, segs
+
+    def _add_part_abbr(self, buf, nseg, add):
+        """部分简拼:把末尾 t 个字母当作连续声母、前缀整段切成完整音节去查索引。
+        直接在原始字母串上枚举 t(不依赖贪心切分,避免 nihm 里 hm 被当成音节)。"""
+        if not self.part_abbr:
+            return
+        letters = buf.replace("'", "")
+        pool = []
+        for t in range(1, len(letters)):  # 末尾 t 个字母作声母,剩下作全拼前缀
+            tail = letters[-t:]
+            if not all(c in _INITIALS_1 for c in tail):
+                break  # 末尾出现非声母字母,再往左也不可能全是声母
+            pre = self.segment(letters[:-t])
+            if not all(s in self.syllables for s in pre):
+                continue  # 前缀切不成完整音节
+            for ki, combo in enumerate(self.fuzzy_keys(pre)):
+                for w, wt_ in self.part_abbr.get((combo, tail), []):
+                    pool.append((w, wt_, ki + t * 100))  # t 越小(全拼越多)越靠前
+        pool.sort(key=lambda x: (-x[1], x[2]))
+        for w, _wt, _ki in pool:
+            add(w, nseg)
 
     def bump(self, word, sub):
         """选词调权:把选中词的权重提为同拼音候选池里的最大权重 + 1(内存立即生效)。
@@ -839,7 +907,11 @@ class Engine:
     def on_key_up(self, vk):
         if vk in SHIFT_KEYS and self.shift_tap:
             self.shift_tap = False
-            self.toggle()
+            if self.buf:  # 组词中单击 Shift:原始字母上屏并取消候选,不切换中英
+                self.commit(self.buf.replace("'", ""))
+                self.clear()
+            else:
+                self.toggle()
         return False
 
 
