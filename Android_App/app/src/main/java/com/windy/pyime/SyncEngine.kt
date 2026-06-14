@@ -103,9 +103,8 @@ class SyncEngine(private val ds: DataStore) {
         return if (t.length > 40) t.substring(0, 40) + "…" else t
     }
 
-    /** 应用结果:已写入本地的条数 + 需要上传到云端的数据(仅文件夹/常用语)。 */
+    /** 应用结果:需要上传到云端的数据(仅文件夹/常用语)。 */
     class Result(
-        val appliedLocal: Int,
         val pushFolder: JSONArray,
         val pushPhrase: JSONArray,
     )
@@ -117,7 +116,6 @@ class SyncEngine(private val ds: DataStore) {
     fun apply(diffs: List<Diff>): Result {
         val pushFolder = JSONArray()
         val pushPhrase = JSONArray()
-        var applied = 0
 
         // 先写本地的文件夹,再写常用语
         val ordered = diffs.sortedBy { if (it.kind == Kind.FOLDER) 0 else 1 }
@@ -128,7 +126,6 @@ class SyncEngine(private val ds: DataStore) {
                     Kind.PHRASE -> ds.applyPhraseRow(d.winner)
                     Kind.CLIP -> {}   // 剪贴板不同步
                 }
-                applied++
             } else {
                 when (d.kind) {
                     Kind.FOLDER -> pushFolder.put(d.winner)
@@ -138,6 +135,6 @@ class SyncEngine(private val ds: DataStore) {
             }
         }
 
-        return Result(applied, pushFolder, pushPhrase)
+        return Result(pushFolder, pushPhrase)
     }
 }

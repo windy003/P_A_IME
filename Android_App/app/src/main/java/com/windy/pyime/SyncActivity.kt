@@ -456,7 +456,7 @@ class SyncActivity : Activity() {
                 val result = SyncEngine(ds).apply(snapshot)
                 SyncClient(url, token).push(result.pushFolder, result.pushPhrase)
                 ui.post {
-                    toast("同步完成:本地更新 ${result.appliedLocal} 项,上传 ${
+                    toast("同步完成:上传 ${
                         result.pushFolder.length() + result.pushPhrase.length()
                     } 项")
                     startCompare()   // 重新比较,正常应显示已一致
