@@ -390,9 +390,9 @@ class PinyinImeService : InputMethodService() {
         modeKey = makeKey(if (cnMode) "中" else "EN", 1.4f) { toggleMode() }
         row.addView(modeKey)
         row.addView(makeKey("1", 1.4f) { openSymbolView() })  // 数字键盘(九宫格)入口
-        row.addView(makeKey("，", 1f) { onPunct("，", ",") })
+        row.addView(makeKey(",", 1f) { onPunct("，", ",") })
         row.addView(makeKey("空格", 3f) { onSpace() })
-        row.addView(makeKey("。", 1f) { onPunct("。", ".") })
+        row.addView(makeKey(".", 1f) { onPunct("。", ".") })
         row.addView(makeKey("⏎", 1.6f) { onEnter() })
         return row
     }
@@ -494,7 +494,8 @@ class PinyinImeService : InputMethodService() {
     private fun onPunct(cn: String, en: String) {
         // 组词中按标点:先把当前拼音字母上屏,再发标点(简化:不在标点路径做部分选词)
         if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
-        commitText(if (cnMode) cn else en)
+        // 逗号、句号无论中英文模式都输出英文版本
+        commitText(en)
     }
 
     /** 收回输入法面板:丢弃未完成的拼音,隐藏键盘。 */
