@@ -90,6 +90,7 @@ class PinyinImeService : InputMethodService() {
         'e' to ":",
         'r' to "/",
         't' to "\\",
+        'y' to "!",
     )
 
     override fun onCreate() {
@@ -1210,8 +1211,9 @@ class PinyinImeService : InputMethodService() {
 
     // ---------------------------------------------------------------- 光标操作面板
     /**
-     * 构建光标操作面板:顶部一行编辑动作(全选/剪切/复制/粘贴/返回键盘),
-     * 下方十字方向键,中间「选择」键切换选择模式 —— 开启后移动方向键会扩展选区。
+     * 构建光标操作面板:十字方向键 + 中间「选择」键(开启后移动方向键会扩展选区)。
+     * 编辑动作放在十字的四个斜对角上(全选/剪切/复制/粘贴),不再拥挤在顶部;
+     * 清除、返回键盘放在最底一行。
      */
     private fun buildCursorPanel(): View {
         val panel = LinearLayout(this).apply {
@@ -1222,37 +1224,34 @@ class PinyinImeService : InputMethodService() {
             )
         }
 
-        // 顶部动作行:全选 / 剪切 / 复制 / 粘贴 / 返回键盘
-        val topRow = newRow()
-        topRow.addView(makeKey("全选", 1.5f) { onSelectAll() })
-        topRow.addView(makeKey("剪切", 1.5f) { onClipAction(android.R.id.cut) })
-        topRow.addView(makeKey("复制", 1.5f) { onClipAction(android.R.id.copy) })
-        topRow.addView(makeKey("粘贴", 1.5f) { onClipAction(android.R.id.paste) })
-        topRow.addView(makeKey("⌨", 1.4f) { closeCursorPanel() })
-        panel.addView(topRow)
+        // 第一行:左上角 全选 / ↑ / 右上角 剪切
+        val row1 = newRow()
+        row1.addView(makeKey("全选", 1f) { onSelectAll() })
+        row1.addView(makeKey("↑", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_UP) })
+        row1.addView(makeKey("剪切", 1f) { onClipAction(android.R.id.cut) })
+        panel.addView(row1)
 
-        // 上
-        val upRow = newRow()
-        upRow.addView(spacer(1.5f))
-        upRow.addView(makeKey("↑", 1.5f) { moveCursor(KeyEvent.KEYCODE_DPAD_UP) })
-        upRow.addView(spacer(1.5f))
-        panel.addView(upRow)
-
-        // 左 / 选择 / 右
-        val midRow = newRow()
-        midRow.addView(makeKey("←", 1.5f) { moveCursor(KeyEvent.KEYCODE_DPAD_LEFT) })
-        val sk = makeKey("选择", 1.5f) { toggleSelecting() }
+        // 第二行:← / 选择 / →
+        val row2 = newRow()
+        row2.addView(makeKey("←", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_LEFT) })
+        val sk = makeKey("选择", 1f) { toggleSelecting() }
         selectKey = sk
-        midRow.addView(sk)
-        midRow.addView(makeKey("→", 1.5f) { moveCursor(KeyEvent.KEYCODE_DPAD_RIGHT) })
-        panel.addView(midRow)
+        row2.addView(sk)
+        row2.addView(makeKey("→", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_RIGHT) })
+        panel.addView(row2)
 
-        // 下
-        val downRow = newRow()
-        downRow.addView(spacer(1.5f))
-        downRow.addView(makeKey("↓", 1.5f) { moveCursor(KeyEvent.KEYCODE_DPAD_DOWN) })
-        downRow.addView(spacer(1.5f))
-        panel.addView(downRow)
+        // 第三行:左下角 复制 / ↓ / 右下角 清除
+        val row3 = newRow()
+        row3.addView(makeKey("复制", 1f) { onClipAction(android.R.id.copy) })
+        row3.addView(makeKey("↓", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_DOWN) })
+        row3.addView(makeKey("清除", 1f) { onClear() })
+        panel.addView(row3)
+
+        // 最底一行:粘贴 / 返回键盘
+        val row4 = newRow()
+        row4.addView(makeKey("粘贴", 1f) { onClipAction(android.R.id.paste) })
+        row4.addView(makeKey("⌨", 1f) { closeCursorPanel() })
+        panel.addView(row4)
 
         return panel
     }
@@ -1326,6 +1325,13 @@ class PinyinImeService : InputMethodService() {
     /** 执行剪切/复制/粘贴,完成后退出选择模式。 */
     private fun onClipAction(action: Int) {
         currentInputConnection?.performContextMenuAction(action)
+        selecting = false
+        updateSelectKey()
+    }
+
+    /** 清除:有选区时用空串替换选中内容即删除(配合「全选」可清空输入框);完成后退出选择模式。 */
+    private fun onClear() {
+        currentInputConnection?.commitText("", 1)
         selecting = false
         updateSelectKey()
     }
