@@ -266,8 +266,8 @@ class PinyinImeService : InputMethodService() {
         }
         row.addView(toolbarButton("📋") { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() })
         row.addView(toolbarButton("📝") { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() })
-        row.addView(toolbarButton("✥") { openCursorPanel() })
         row.addView(toolbarButton("☁") { openSync() })
+        row.addView(toolbarButton("✥") { openCursorPanel() })
         row.addView(toolbarButton("⌄") { onHide() })
         return row
     }
@@ -407,8 +407,8 @@ class PinyinImeService : InputMethodService() {
         val row = newRow()
         // 剪贴板、光标、收起入口都在常驻工具条
         modeKey = makeKey(if (cnMode) "中" else "EN", 1.4f) { toggleMode() }
-        row.addView(modeKey)
         row.addView(makeKey("1", 1.4f) { openSymbolView() })  // 数字键盘(九宫格)入口
+        row.addView(modeKey)
         row.addView(makeKey(",", 1f) { onPunct("，", ",") })
         row.addView(makeKey("空格", 3f) { onSpace() })
         row.addView(makeKey(".", 1f) { onPunct("。", ".") })
@@ -1189,12 +1189,12 @@ class PinyinImeService : InputMethodService() {
 
         val r1 = newRow()
         for (n in listOf("1", "2", "3")) r1.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r1.addView(makeKey("⌫", 1f) { onBackspace() })
+        r1.addView(makeKey("返回", 1f) { closeSymbolView() })
         root.addView(r1)
 
         val r2 = newRow()
         for (n in listOf("4", "5", "6")) r2.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r2.addView(makeKey("返回", 1f) { closeSymbolView() })
+        r2.addView(makeKey("⌫", 1f) { onBackspace() })
         root.addView(r2)
 
         val r3 = newRow()
