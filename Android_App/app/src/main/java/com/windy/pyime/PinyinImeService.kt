@@ -487,8 +487,24 @@ class PinyinImeService : InputMethodService() {
     }
 
     private fun onEnter() {
-        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
-        else sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf(); return }
+        // 无拼音时:优先触发输入框声明的编辑器动作(地址栏「前往」、搜索框「搜索」等);
+        // 没有具体动作或被禁用时才退回发普通 Enter(换行/确认)
+        val ic = currentInputConnection
+        val ei = currentInputEditorInfo
+        if (ic != null && ei != null) {
+            val opts = ei.imeOptions
+            val action = opts and android.view.inputmethod.EditorInfo.IME_MASK_ACTION
+            val noEnterAction =
+                (opts and android.view.inputmethod.EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+            if (!noEnterAction &&
+                action != android.view.inputmethod.EditorInfo.IME_ACTION_NONE &&
+                action != android.view.inputmethod.EditorInfo.IME_ACTION_UNSPECIFIED) {
+                ic.performEditorAction(action)
+                return
+            }
+        }
+        sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
     }
 
     private fun onPunct(cn: String, en: String) {
