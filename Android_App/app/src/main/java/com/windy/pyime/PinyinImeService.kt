@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -101,6 +102,18 @@ class PinyinImeService : InputMethodService() {
 
     private fun prefs() = getSharedPreferences(PREFS, MODE_PRIVATE)
 
+    private var builtNight = false   // 上次构建输入视图时的夜间状态(用于检测系统切换后重建)
+
+    /** 当前是否处于系统夜间模式。 */
+    private fun isNight(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    // 随夜间模式切换的调色板(强调蓝/红/灰提示色在明暗下通用,不随之变化)
+    private fun colPanelBg() = if (isNight()) 0xFF202124.toInt() else 0xFFECEFF1.toInt()
+    private fun colSurface() = if (isNight()) 0xFF3C4043.toInt() else Color.WHITE
+    private fun colText() = if (isNight()) 0xFFE8EAED.toInt() else 0xFF202020.toInt()
+
     private val ROW1 = "qwertyuiop"
     private val ROW2 = "asdfghjkl"
     private val ROW3 = "zxcvbnm"
@@ -143,7 +156,8 @@ class PinyinImeService : InputMethodService() {
     /** 键盘唤起时:若设置页改过高度则重建键盘;复位到键盘视图;采集系统剪贴板。 */
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (prefs().getInt(KEY_ROW_HEIGHT, DEFAULT_ROW_HEIGHT) != rowHeightDp) {
+        if (prefs().getInt(KEY_ROW_HEIGHT, DEFAULT_ROW_HEIGHT) != rowHeightDp
+            || isNight() != builtNight) {   // 高度改过 或 系统夜间模式切换过 -> 重建
             setInputView(buildInputView())
         }
         // 区分当前输入框是自己的编辑页,还是外部 app 的输入框
@@ -180,12 +194,13 @@ class PinyinImeService : InputMethodService() {
 
     private fun buildInputView(): View {
         rowHeightDp = prefs().getInt(KEY_ROW_HEIGHT, DEFAULT_ROW_HEIGHT)
+        builtNight = isNight()
         letterKeys.clear()
         currentFolder = null
 
         // FrameLayout 根容器:键盘与工具面板叠放,通过显隐切换
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -212,7 +227,7 @@ class PinyinImeService : InputMethodService() {
     private fun buildKeyboardView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -286,9 +301,9 @@ class PinyinImeService : InputMethodService() {
             this.text = text
             textSize = 15f
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             isClickable = true
@@ -328,7 +343,7 @@ class PinyinImeService : InputMethodService() {
             text = displayChar(c).toString()
             gravity = Gravity.CENTER
             textSize = 18f
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
@@ -337,7 +352,7 @@ class PinyinImeService : InputMethodService() {
 
         val container = FrameLayout(this).apply {
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(0, dp(rowHeightDp), 1f).apply {
@@ -439,9 +454,9 @@ class PinyinImeService : InputMethodService() {
             this.text = text
             gravity = Gravity.CENTER
             textSize = 18f
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             isClickable = true
@@ -558,7 +573,7 @@ class PinyinImeService : InputMethodService() {
     private fun buildToolPanel(): View {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -622,7 +637,7 @@ class PinyinImeService : InputMethodService() {
 
     private fun setTabBg(tv: TextView?, selected: Boolean) {
         tv?.background = GradientDrawable().apply {
-            setColor(if (selected) Color.parseColor("#4A90D9") else Color.WHITE)
+            setColor(if (selected) Color.parseColor("#4A90D9") else colSurface())
             cornerRadius = dp(6).toFloat()
         }
     }
@@ -793,7 +808,7 @@ class PinyinImeService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -805,7 +820,7 @@ class PinyinImeService : InputMethodService() {
             textSize = 16f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             setPadding(dp(12), dp(12), dp(12), dp(12))
             isClickable = true
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -835,7 +850,7 @@ class PinyinImeService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -886,7 +901,7 @@ class PinyinImeService : InputMethodService() {
             textSize = 16f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             setPadding(dp(12), dp(12), dp(12), dp(12))
             isClickable = true
             isLongClickable = true
@@ -1014,9 +1029,9 @@ class PinyinImeService : InputMethodService() {
             this.text = text
             textSize = 14f
             gravity = Gravity.CENTER
-            setTextColor(if (selected) Color.WHITE else Color.parseColor("#202020"))
+            setTextColor(if (selected) Color.WHITE else colText())
             background = GradientDrawable().apply {
-                setColor(if (selected) Color.parseColor("#4A90D9") else Color.WHITE)
+                setColor(if (selected) Color.parseColor("#4A90D9") else colSurface())
                 cornerRadius = dp(14).toFloat()
             }
             setPadding(dp(14), dp(6), dp(14), dp(6))
@@ -1039,9 +1054,9 @@ class PinyinImeService : InputMethodService() {
             text = folder.name
             textSize = 14f
             gravity = Gravity.CENTER
-            setTextColor(if (selected) Color.WHITE else Color.parseColor("#202020"))
+            setTextColor(if (selected) Color.WHITE else colText())
             background = GradientDrawable().apply {
-                setColor(if (selected) Color.parseColor("#4A90D9") else Color.WHITE)
+                setColor(if (selected) Color.parseColor("#4A90D9") else colSurface())
                 cornerRadius = dp(14).toFloat()
             }
             setPadding(dp(14), dp(6), dp(14), dp(6))
@@ -1190,7 +1205,7 @@ class PinyinImeService : InputMethodService() {
     private fun buildSymbolView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1244,7 +1259,7 @@ class PinyinImeService : InputMethodService() {
     private fun buildHandwritingPanel(): View {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1275,7 +1290,7 @@ class PinyinImeService : InputMethodService() {
         // 画板
         val pad = HandwritingPad(this).apply {
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -1300,7 +1315,7 @@ class PinyinImeService : InputMethodService() {
     @SuppressLint("ViewConstructor")
     private inner class HandwritingPad(context: Context) : View(context) {
         private val paint = Paint().apply {
-            color = Color.parseColor("#202020")
+            color = colText()
             isAntiAlias = true
             style = Paint.Style.STROKE
             strokeWidth = dp(3).toFloat()
@@ -1425,7 +1440,7 @@ class PinyinImeService : InputMethodService() {
     private fun hwCandView(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 20f
-        setTextColor(Color.parseColor("#202020"))
+        setTextColor(colText())
         gravity = Gravity.CENTER
         setPadding(dp(14), dp(4), dp(14), dp(4))
         isClickable = true
@@ -1468,7 +1483,7 @@ class PinyinImeService : InputMethodService() {
     private fun buildCursorPanel(): View {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            setBackgroundColor(colPanelBg())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1560,10 +1575,10 @@ class PinyinImeService : InputMethodService() {
         val k = selectKey ?: return
         k.text = if (selecting) "选择中" else "选择"
         k.background = GradientDrawable().apply {
-            setColor(if (selecting) Color.parseColor("#4A90D9") else Color.WHITE)
+            setColor(if (selecting) Color.parseColor("#4A90D9") else colSurface())
             cornerRadius = dp(6).toFloat()
         }
-        k.setTextColor(if (selecting) Color.WHITE else Color.parseColor("#202020"))
+        k.setTextColor(if (selecting) Color.WHITE else colText())
     }
 
     private fun onSelectAll() {
@@ -1630,7 +1645,7 @@ class PinyinImeService : InputMethodService() {
             textSize = 17f
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(4), dp(12), dp(4))
-            setTextColor(Color.parseColor("#202020"))
+            setTextColor(colText())
             isClickable = true
             setOnClickListener { choose(index) }
         }
