@@ -34,11 +34,16 @@ class SyncEngine(private val ds: DataStore) {
         val origin: Origin,
     )
 
-    /** 计算差异项(仅文件夹与常用语;剪贴板不参与比较/同步)。 */
+    /** 计算差异项(仅文件夹与常用语;剪贴板不参与比较/同步)。
+     *  文件夹按「名字」比较,常用语按「所在文件夹名 + 文本内容」比较(均不看 uuid)。 */
     fun computeDiffs(remote: SyncClient.RemoteData): List<Diff> {
+        val localFolders = ds.exportFolders()
         val out = ArrayList<Diff>()
-        out += diffTable(Kind.FOLDER, ds.exportFolders(), remote.folders) { "文件夹:" + it.optString("name") }
-        out += diffTable(Kind.PHRASE, ds.exportPhrases(), remote.phrases) { "常用语:" + it.optString("content") }
+        out += diffFoldersByName(localFolders, remote.folders)
+        out += diffPhrasesByPath(
+            ds.exportPhrases(), remote.phrases,
+            uuidToName(localFolders), uuidToName(remote.folders)
+        )
         return out
     }
 
@@ -57,33 +62,92 @@ class SyncEngine(private val ds: DataStore) {
         return m
     }
 
-    private inline fun diffTable(
-        kind: Kind, localArr: JSONArray, remoteArr: JSONArray, label: (JSONObject) -> String
-    ): List<Diff> {
-        val local = indexByUuid(localArr)
-        val remote = indexByUuid(remoteArr)
+    /** 文件夹数组 -> (uuid -> 名称)。 */
+    private fun uuidToName(arr: JSONArray): HashMap<String, String> {
+        val m = HashMap<String, String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val u = o.optString("uuid")
+            if (u.isNotEmpty()) m[u] = o.optString("name")
+        }
+        return m
+    }
+
+    /** 文件夹数组 -> (名称 -> uuid);同名取第一个。 */
+    private fun nameToUuid(arr: JSONArray): HashMap<String, String> {
+        val m = HashMap<String, String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val n = o.optString("name"); val u = o.optString("uuid")
+            if (n.isNotEmpty() && u.isNotEmpty()) m.putIfAbsent(n, u)
+        }
+        return m
+    }
+
+    /** 文件夹按「名字」比较(而非 uuid):同名即视为同一个文件夹;仅一端有 -> 补到另一端。 */
+    private fun diffFoldersByName(localArr: JSONArray, remoteArr: JSONArray): List<Diff> {
+        fun index(arr: JSONArray): LinkedHashMap<String, JSONObject> {
+            val m = LinkedHashMap<String, JSONObject>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val n = o.optString("name")
+                if (n.isNotEmpty()) m.putIfAbsent(n, o)
+            }
+            return m
+        }
+        val local = index(localArr); val remote = index(remoteArr)
         val out = ArrayList<Diff>()
-        val allUuids = LinkedHashSet<String>().apply { addAll(local.keys); addAll(remote.keys) }
-        for (uuid in allUuids) {
-            val l = local[uuid]
-            val r = remote[uuid]
+        val allNames = LinkedHashSet<String>().apply { addAll(local.keys); addAll(remote.keys) }
+        for (n in allNames) {
+            val l = local[n]; val r = remote[n]
             when {
-                // 仅本地有 -> 归本地,待补到云端
                 l != null && r == null ->
-                    out.add(Diff(kind, uuid, label(l), "仅本地", l, Origin.LOCAL))
-                // 仅云端有 -> 归云端,待写入本地
+                    out.add(Diff(Kind.FOLDER, l.optString("uuid"), "文件夹:$n", "仅本地", l, Origin.LOCAL))
                 r != null && l == null ->
-                    out.add(Diff(kind, uuid, label(r), "仅云端", r, Origin.REMOTE))
-                // 两端都有:内容若被编辑(updated_at 不同)按较新方传播
-                l != null && r != null -> {
-                    val lt = l.optLong("updated_at"); val rt = r.optLong("updated_at")
-                    if (lt != rt) {
-                        val winner = if (lt > rt) l else r
-                        val origin = if (lt > rt) Origin.LOCAL else Origin.REMOTE
-                        val who = if (lt > rt) "本地较新" else "云端较新"
-                        out.add(Diff(kind, uuid, label(winner), who, winner, origin))
-                    }
-                }
+                    out.add(Diff(Kind.FOLDER, r.optString("uuid"), "文件夹:$n", "仅云端", r, Origin.REMOTE))
+                // 同名 -> 视为同一文件夹,无差异
+            }
+        }
+        return out
+    }
+
+    /**
+     * 常用语按「路径(所在文件夹的名字)+ 文本内容」比较,而非各自的 uuid:
+     * 两端在同名文件夹下有相同内容即视为同一条(不再因 uuid 不同而重复同步);
+     * 仅一端有 -> 补到另一端。注意路径用文件夹「名字」而非 folder_uuid,
+     * 这样即使两端同名文件夹的 uuid 不同,也能正确匹配。
+     * 注意:因内容是身份的一部分,「编辑某条文字」会被视为「旧条目消失、新条目出现」,
+     * 而非内容更新(旧条目需在比较面板里手动删除)。
+     */
+    private fun diffPhrasesByPath(
+        localArr: JSONArray, remoteArr: JSONArray,
+        localNames: Map<String, String>, remoteNames: Map<String, String>
+    ): List<Diff> {
+        fun keyOf(o: JSONObject, names: Map<String, String>): String {
+            val fu = if (o.isNull("folder_uuid")) "" else o.optString("folder_uuid")
+            val folderName = names[fu] ?: ""          // 把 folder_uuid 翻译成文件夹名
+            return folderName + "	" + o.optString("content")   // 文件夹名(路径) + 内容
+        }
+        fun index(arr: JSONArray, names: Map<String, String>): LinkedHashMap<String, JSONObject> {
+            val m = LinkedHashMap<String, JSONObject>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                m.putIfAbsent(keyOf(o, names), o)   // 同一端已有重复(同路径同内容)只保留第一条
+            }
+            return m
+        }
+        val local = index(localArr, localNames)
+        val remote = index(remoteArr, remoteNames)
+        val out = ArrayList<Diff>()
+        val allKeys = LinkedHashSet<String>().apply { addAll(local.keys); addAll(remote.keys) }
+        for (k in allKeys) {
+            val l = local[k]; val r = remote[k]
+            when {
+                l != null && r == null ->
+                    out.add(Diff(Kind.PHRASE, l.optString("uuid"), "常用语:" + l.optString("content"), "仅本地", l, Origin.LOCAL))
+                r != null && l == null ->
+                    out.add(Diff(Kind.PHRASE, r.optString("uuid"), "常用语:" + r.optString("content"), "仅云端", r, Origin.REMOTE))
+                // 两端同路径同内容 -> 一致,无差异
             }
         }
         return out

@@ -77,9 +77,10 @@ class PinyinImeService : InputMethodService() {
     private var panelContent: LinearLayout? = null // 工具面板内容区(Tab 切换时重建)
     private var currentFolder: DataStore.Folder? = null  // 常用语当前进入的文件夹(null=最近)
 
-    // 跳转到编辑页(PhraseEditActivity)新建文件夹/常用语后,返回时自动重开常用语面板
+    // 跳转到编辑页(PhraseEditActivity)/同步页(SyncActivity)后,返回时自动重开工具面板
     private var pendingReopenPanel = false
     private var pendingReopenFolderUuid: String? = null
+    private var pendingReopenTab = TAB_PHRASE   // 返回后要重开的 Tab(剪贴板/常用语)
 
     private var symbolView: View? = null           // 数字符号页
 
@@ -163,9 +164,9 @@ class PinyinImeService : InputMethodService() {
         // 区分当前输入框是自己的编辑页,还是外部 app 的输入框
         val isOwnEditor = info?.packageName == packageName
         if (pendingReopenPanel && !isOwnEditor) {
-            // 从编辑页保存返回到外部输入框:重开常用语面板并定位到原文件夹,直接看到新增内容
+            // 从编辑页/同步页返回到外部输入框:重开之前所在的工具面板(并定位到原文件夹)
             pendingReopenPanel = false
-            toolTab = TAB_PHRASE
+            toolTab = pendingReopenTab
             currentFolder = pendingReopenFolderUuid?.let { uuid ->
                 dataStore?.folders()?.find { it.uuid == uuid }
             }
@@ -585,6 +586,13 @@ class PinyinImeService : InputMethodService() {
         phraseTabKey = makeKey("常用语", 2f) { toolTab = TAB_PHRASE; currentFolder = null; renderPanel() }
         tabRow.addView(clipTabKey)
         tabRow.addView(phraseTabKey)
+        tabRow.addView(makeKey("☁", 1.4f) {
+            // 从工具面板进同步页:记下当前 Tab/文件夹,返回外部输入框时自动重开本面板
+            pendingReopenPanel = true
+            pendingReopenTab = toolTab
+            pendingReopenFolderUuid = currentFolder?.uuid
+            openSync()
+        })
         tabRow.addView(makeKey("⌨", 1.4f) { closeToolPanel() })
         panel.addView(tabRow)
 
@@ -757,6 +765,7 @@ class PinyinImeService : InputMethodService() {
     ) {
         pendingReopenPanel = true
         pendingReopenFolderUuid = folderUuid
+        pendingReopenTab = TAB_PHRASE
         val intent = android.content.Intent(this, PhraseEditActivity::class.java).apply {
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(PhraseEditActivity.EXTRA_MODE, mode)
