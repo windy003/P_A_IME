@@ -58,8 +58,6 @@ class PinyinImeService : InputMethodService() {
 
     // 剪贴板/常用语
     private var dataStore: DataStore? = null
-    private var modeIndicator: View? = null        // 切换中/英时顶部弹出的提示色块
-    private val hideIndicator = Runnable { modeIndicator?.visibility = View.GONE }
     private var keyboardView: View? = null         // 键盘整体
     private var panelView: View? = null            // 工具面板(剪贴板/常用语)
     private var panelContent: LinearLayout? = null // 工具面板内容区(Tab 切换时重建)
@@ -87,12 +85,12 @@ class PinyinImeService : InputMethodService() {
 
     /** 字母键上滑可输入的符号:长按字母向上滑动即输入对应符号。 */
     private val swipeSymbols = mapOf(
+        'a' to "!",
         'q' to "'",
         'w' to "\"",
         'e' to ":",
         'r' to "/",
         't' to "\\",
-        'y' to "!",
         'u' to "?",
     )
 
@@ -182,22 +180,6 @@ class PinyinImeService : InputMethodService() {
         root.addView(panel)
         root.addView(cursor)
         root.addView(symbol)
-
-        // 切换中/英模式时在面板顶部居中弹出的提示色块(默认隐藏,见 showModeIndicator)
-        val indicator = View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(panelBgColor())
-                cornerRadius = dp(4).toFloat()
-            }
-            layoutParams = FrameLayout.LayoutParams(dp(28), dp(28)).apply {
-                gravity = Gravity.TOP or Gravity.START
-                topMargin = dp(6)
-                marginStart = dp(6)
-            }
-            visibility = View.GONE
-        }
-        modeIndicator = indicator
-        root.addView(indicator)
         return root
     }
 
@@ -1243,11 +1225,11 @@ class PinyinImeService : InputMethodService() {
             )
         }
 
-        // 第一行:左上角 全选 / ↑ / 右上角 剪切
+        // 第一行:左上角 全选 / ↑ / 右上角 清除
         val row1 = newRow()
         row1.addView(makeKey("全选", 1f) { onSelectAll() })
         row1.addView(makeKey("↑", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_UP) })
-        row1.addView(makeKey("剪切", 1f) { onClipAction(android.R.id.cut) })
+        row1.addView(makeKey("清除", 1f) { onClear() })
         panel.addView(row1)
 
         // 第二行:← / 选择 / →
@@ -1259,11 +1241,11 @@ class PinyinImeService : InputMethodService() {
         row2.addView(makeKey("→", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_RIGHT) })
         panel.addView(row2)
 
-        // 第三行:左下角 复制 / ↓ / 右下角 清除
+        // 第三行:左下角 复制 / ↓ / 右下角 剪切
         val row3 = newRow()
         row3.addView(makeKey("复制", 1f) { onClipAction(android.R.id.copy) })
         row3.addView(makeKey("↓", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_DOWN) })
-        row3.addView(makeKey("清除", 1f) { onClear() })
+        row3.addView(makeKey("剪切", 1f) { onClipAction(android.R.id.cut) })
         panel.addView(row3)
 
         // 最底一行:粘贴 / 返回键盘
@@ -1355,25 +1337,11 @@ class PinyinImeService : InputMethodService() {
         updateSelectKey()
     }
 
-    /** 模式提示色块颜色:中文模式红色,英文模式紫色。 */
-    private fun panelBgColor(): Int =
-        Color.parseColor(if (cnMode) "#F44336" else "#9C27B0")
-
-    /** 切换模式时在面板上方弹出一个小方块(中文红/英文紫),2 秒后自动消失。 */
-    private fun showModeIndicator() {
-        val v = modeIndicator ?: return
-        (v.background as? GradientDrawable)?.setColor(panelBgColor())
-        v.removeCallbacks(hideIndicator)
-        v.visibility = View.VISIBLE
-        v.postDelayed(hideIndicator, 2000)
-    }
-
     private fun toggleMode() {
         if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
         cnMode = !cnMode
         modeKey?.text = if (cnMode) "中" else "EN"
         updateLetterCaps()
-        showModeIndicator()
     }
 
     private fun commitText(t: String) {
