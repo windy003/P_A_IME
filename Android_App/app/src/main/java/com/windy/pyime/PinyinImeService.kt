@@ -3,7 +3,11 @@ package com.windy.pyime
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Environment
@@ -20,6 +24,15 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.vision.digitalink.DigitalInkRecognition
+import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel
+import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier
+import com.google.mlkit.vision.digitalink.DigitalInkRecognizer
+import com.google.mlkit.vision.digitalink.DigitalInkRecognizerOptions
+import com.google.mlkit.vision.digitalink.Ink
+import com.google.mlkit.vision.digitalink.RecognitionResult
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -68,6 +81,15 @@ class PinyinImeService : InputMethodService() {
     private var pendingReopenFolderUuid: String? = null
 
     private var symbolView: View? = null           // 数字符号页
+
+    // 手写输入(Google ML Kit Digital Ink,首次需联网下载中文模型,之后离线识别)
+    private var handwritingView: View? = null       // 手写面板整体
+    private var handwritingPad: HandwritingPad? = null  // 画板
+    private var hwCandidates: LinearLayout? = null  // 手写候选行
+    private var hwStatus: TextView? = null          // 状态提示(下载/识别/出错)
+    private var recognizer: DigitalInkRecognizer? = null
+    private var modelReady = false                  // 中文手写模型是否已就绪
+    private val recognizeRunnable = Runnable { runRecognition() }  // 停笔后防抖触发识别
 
     // 光标操作面板
     private var cursorView: View? = null           // 光标操作面板(方向键 + 选择/剪切/复制/粘贴)
@@ -172,14 +194,17 @@ class PinyinImeService : InputMethodService() {
         val panel = buildToolPanel().apply { visibility = View.GONE }
         val cursor = buildCursorPanel().apply { visibility = View.GONE }
         val symbol = buildSymbolView().apply { visibility = View.GONE }
+        val handwriting = buildHandwritingPanel().apply { visibility = View.GONE }
         keyboardView = kb
         panelView = panel
         cursorView = cursor
         symbolView = symbol
+        handwritingView = handwriting
         root.addView(kb)
         root.addView(panel)
         root.addView(cursor)
         root.addView(symbol)
+        root.addView(handwriting)
         return root
     }
 
@@ -247,6 +272,7 @@ class PinyinImeService : InputMethodService() {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(82)   // = 预览32 + 候选50,保证不跳动
             )
         }
+        row.addView(toolbarButton("✍") { openHandwriting() })
         row.addView(toolbarButton("📋") { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() })
         row.addView(toolbarButton("📝") { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() })
         row.addView(toolbarButton("☁") { openSync() })
@@ -1210,6 +1236,229 @@ class PinyinImeService : InputMethodService() {
         keyboardView?.visibility = View.VISIBLE
     }
 
+    // ---------------------------------------------------------------- 手写输入
+    /**
+     * 手写面板:候选行 + 状态提示 + 画板 + 功能行。
+     * 识别用 Google ML Kit Digital Ink(中文 zh-Hani 模型),首次需联网下载,之后离线可用。
+     */
+    private fun buildHandwritingPanel(): View {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#ECEFF1"))
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // 候选行(横向滚动)
+        val cand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        hwCandidates = cand
+        panel.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(cand)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+            )
+        })
+
+        // 状态提示(下载/识别/出错)
+        hwStatus = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setPadding(dp(12), 0, dp(12), dp(2))
+        }
+        panel.addView(hwStatus)
+
+        // 画板
+        val pad = HandwritingPad(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(6).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(180)
+            ).apply { setMargins(dp(6), dp(2), dp(6), dp(4)) }
+        }
+        handwritingPad = pad
+        panel.addView(pad)
+
+        // 功能行
+        val row = newRow()
+        row.addView(makeKey("清除", 1f) { clearHandwriting() })
+        row.addView(makeKey("⌫", 1f) { onBackspace() })
+        row.addView(makeKey("空格", 2f) { commitText(" ") })
+        row.addView(makeKey("⏎", 1f) { onEnter() })
+        row.addView(makeKey("拼音", 1.4f) { closeHandwriting() })
+        panel.addView(row)
+        return panel
+    }
+
+    /** 画板:捕捉触摸笔迹,边画边收集成 ML Kit 的 Ink;停笔后由外层防抖触发识别。 */
+    @SuppressLint("ViewConstructor")
+    private inner class HandwritingPad(context: Context) : View(context) {
+        private val paint = Paint().apply {
+            color = Color.parseColor("#202020")
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = dp(3).toFloat()
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        private val committedPaths = ArrayList<Path>()
+        private var livePath: Path? = null
+        private var inkBuilder = Ink.builder()
+        private var strokeBuilder: Ink.Stroke.Builder? = null
+
+        fun isEmpty() = committedPaths.isEmpty() && livePath == null
+
+        fun clearPad() {
+            committedPaths.clear()
+            livePath = null
+            inkBuilder = Ink.builder()
+            strokeBuilder = null
+            invalidate()
+        }
+
+        fun currentInk(): Ink = inkBuilder.build()
+
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            val x = event.x; val y = event.y; val t = System.currentTimeMillis()
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    cancelPendingRecognition()
+                    livePath = Path().apply { moveTo(x, y) }
+                    strokeBuilder = Ink.Stroke.builder().apply { addPoint(Ink.Point.create(x, y, t)) }
+                    invalidate()
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    livePath?.lineTo(x, y)
+                    strokeBuilder?.addPoint(Ink.Point.create(x, y, t))
+                    invalidate()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    livePath?.let { committedPaths.add(it) }
+                    livePath = null
+                    strokeBuilder?.let { inkBuilder.addStroke(it.build()) }
+                    strokeBuilder = null
+                    invalidate()
+                    scheduleRecognition()
+                }
+            }
+            return true
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            for (p in committedPaths) canvas.drawPath(p, paint)
+            livePath?.let { canvas.drawPath(it, paint) }
+        }
+    }
+
+    private fun setHwStatus(s: String) { hwStatus?.text = s }
+
+    private fun scheduleRecognition() {
+        mainHandler.removeCallbacks(recognizeRunnable)
+        mainHandler.postDelayed(recognizeRunnable, 600)   // 停笔 600ms 后识别
+    }
+
+    private fun cancelPendingRecognition() {
+        mainHandler.removeCallbacks(recognizeRunnable)
+    }
+
+    /** 确保中文手写模型就绪(必要时下载),就绪后回调 onReady。 */
+    private fun ensureRecognizer(onReady: () -> Unit) {
+        if (modelReady && recognizer != null) { onReady(); return }
+        try {
+            val modelId = DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hani")
+            if (modelId == null) { setHwStatus("此设备不支持中文手写模型"); return }
+            val model = DigitalInkRecognitionModel.builder(modelId).build()
+            val rec = DigitalInkRecognition.getClient(
+                DigitalInkRecognizerOptions.builder(model).build()
+            )
+            val manager = RemoteModelManager.getInstance()
+            manager.isModelDownloaded(model).addOnSuccessListener { downloaded ->
+                if (downloaded) {
+                    recognizer = rec; modelReady = true; setHwStatus(""); onReady()
+                } else {
+                    setHwStatus("首次使用:正在下载中文手写模型(需联网)…")
+                    manager.download(model, DownloadConditions.Builder().build())
+                        .addOnSuccessListener {
+                            recognizer = rec; modelReady = true; setHwStatus(""); onReady()
+                        }
+                        .addOnFailureListener { e ->
+                            setHwStatus("模型下载失败(请联网后重开手写):${e.message}")
+                        }
+                }
+            }.addOnFailureListener { e ->
+                setHwStatus("手写模型检查失败:${e.message}")
+            }
+        } catch (e: Exception) {
+            setHwStatus("手写初始化失败:${e.message}")
+        }
+    }
+
+    private fun runRecognition() {
+        val pad = handwritingPad ?: return
+        if (pad.isEmpty()) return
+        ensureRecognizer {
+            val rec = recognizer ?: return@ensureRecognizer
+            try {
+                rec.recognize(pad.currentInk())
+                    .addOnSuccessListener { result -> showHwCandidates(result) }
+                    .addOnFailureListener { e -> setHwStatus("识别失败:${e.message}") }
+            } catch (e: Exception) {
+                setHwStatus("识别异常:${e.message}")
+            }
+        }
+    }
+
+    private fun showHwCandidates(result: RecognitionResult) {
+        val cont = hwCandidates ?: return
+        cont.removeAllViews()
+        for (c in result.candidates.take(12)) cont.addView(hwCandView(c.text))
+    }
+
+    /** 手写候选项:点击上屏并清空画板,方便继续写下一个字。 */
+    private fun hwCandView(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 20f
+        setTextColor(Color.parseColor("#202020"))
+        gravity = Gravity.CENTER
+        setPadding(dp(14), dp(4), dp(14), dp(4))
+        isClickable = true
+        setOnClickListener {
+            commitText(text)
+            handwritingPad?.clearPad()
+            hwCandidates?.removeAllViews()
+        }
+    }
+
+    private fun clearHandwriting() {
+        handwritingPad?.clearPad()
+        hwCandidates?.removeAllViews()
+        setHwStatus("")
+    }
+
+    private fun openHandwriting() {
+        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
+        keyboardView?.visibility = View.GONE
+        panelView?.visibility = View.GONE
+        cursorView?.visibility = View.GONE
+        symbolView?.visibility = View.GONE
+        handwritingView?.visibility = View.VISIBLE
+        clearHandwriting()
+        ensureRecognizer { }   // 预热;若未下载会提示并开始下载
+    }
+
+    private fun closeHandwriting() {
+        cancelPendingRecognition()
+        handwritingView?.visibility = View.GONE
+        keyboardView?.visibility = View.VISIBLE
+    }
+
     // ---------------------------------------------------------------- 光标操作面板
     /**
      * 构建光标操作面板:十字方向键 + 中间「选择」键(开启后移动方向键会扩展选区)。
@@ -1416,6 +1665,8 @@ class PinyinImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        cancelPendingRecognition()
+        try { recognizer?.close() } catch (e: Exception) { /* 忽略 */ }
         writeExec.shutdown()
         super.onDestroy()
     }
