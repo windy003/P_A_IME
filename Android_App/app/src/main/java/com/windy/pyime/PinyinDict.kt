@@ -20,6 +20,9 @@ class PinyinDict(raw: String) {
     private val syllables = HashSet<String>()                        // 所有合法音节
     private val fuzzy = HashMap<String, List<String>>()              // 音节 -> 等价音节(不含自身)
     private val abbr = HashMap<String, MutableList<WordWeight>>()    // 声母串 -> 候选(共享 table 的实例)
+    // 末字简拼索引:(前缀全拼, 末尾声母串) -> 候选(共享 table 的实例)。
+    // 如 设计 she ji -> ("she","j");计算机 ji suan ji -> ("ji suan","j")、("ji","sj")
+    private val partAbbr = HashMap<Pair<String, String>, MutableList<WordWeight>>()
     private var maxsyl = 1
     private val initSubs = ArrayList<Pair<String, String>>()         // 声母替换对
 
@@ -74,6 +77,26 @@ class PinyinDict(raw: String) {
                 if (v.size > MAX_SHOUPIN_PER_KEY) v.subList(MAX_SHOUPIN_PER_KEY, v.size).clear()
             }
         }
+
+        // ---- 末字简拼索引:前 p 个字全拼 + 末尾 n-p 个字只打声母,按权重降序、截断 ----
+        if (ENABLE_TAIL_INITIAL) {
+            for ((py, words) in table) {
+                val sylls = py.split(" ")
+                val n = sylls.size
+                if (n < 2) continue
+                for (p in 1 until n) {   // 前 p 个全拼,后 n-p 个取声母
+                    val inits = sylls.subList(p, n).joinToString("") { it[0].toString() }
+                    // 末尾有零声母音节(a/e/o 开头)时不能用声母简拼
+                    if (!inits.all { it.toString() in INITIALS_1 }) continue
+                    val key = sylls.subList(0, p).joinToString(" ") to inits
+                    partAbbr.getOrPut(key) { ArrayList() }.addAll(words)   // 共享 WordWeight 实例
+                }
+            }
+            for (v in partAbbr.values) {
+                v.sortByDescending { it.weight }
+                if (v.size > MAX_TAIL_INITIAL_PER_KEY) v.subList(MAX_TAIL_INITIAL_PER_KEY, v.size).clear()
+            }
+        }
     }
 
     /** 取音节(或不完整音节)的声母,无声母返回空串。 */
@@ -119,10 +142,11 @@ class PinyinDict(raw: String) {
     fun candidates(buf: String): Pair<List<Candidate>, List<String>> {
         val segs = segment(buf)
         if (segs.isEmpty()) return Pair(emptyList(), emptyList())
-        val out = ArrayList<Candidate>()
+        // 内部三元组:词、消耗音节数、权重(权重用于同消耗数时的排序,与 Python 版一致)
+        val out = ArrayList<Triple<String, Int, Int>>()
         val seen = HashSet<String>()
-        fun add(word: String, nseg: Int) {
-            if (word !in seen && out.size < MAX_CANDS) { seen.add(word); out.add(Candidate(word, nseg)) }
+        fun add(word: String, nseg: Int, weight: Int) {
+            if (word !in seen && out.size < MAX_CANDS) { seen.add(word); out.add(Triple(word, nseg, weight)) }
         }
 
         for (n in segs.size downTo 1) {
@@ -134,18 +158,45 @@ class PinyinDict(raw: String) {
                     table[k]?.forEach { pool.add(Triple(it.word, it.weight, ki)) }
                 }
                 pool.sortWith(compareByDescending<Triple<String, Int, Int>> { it.second }.thenBy { it.third })
-                for (t in pool) add(t.first, n)
+                for (t in pool) add(t.first, n, t.second)
             }
+            // 整串完整匹配同级:补「末字简拼」候选(前若干字全拼 + 末若干字只打声母,
+            // 如 sej=设计、jisuanj=计算机、nihm=你好吗),消耗整个缓冲区
+            if (n == segs.size) addPartAbbr(buf, segs.size, ::add)
         }
 
         // 简拼:整串全是允许的声母字母时,按声母串补充候选(消耗整个缓冲区)
         val letters = buf.replace("'", "")
         if (abbr.isNotEmpty() && letters.length >= 2 && letters.all { it in ABBR_LETTERS }) {
-            abbr[letters]?.forEach { add(it.word, segs.size) }
+            abbr[letters]?.forEach { add(it.word, segs.size, it.weight) }
         }
-        // 消耗输入更多的候选排前(如 nbn:吃满 3 字母的"能不能"应在只占 1 个的"嗯"前),稳定排序
-        val sorted = out.sortedByDescending { it.nseg }
-        return Pair(sorted, segs)
+        // 消耗输入更多的候选排前(如 nbn:吃满 3 字母的"能不能"应在只占 1 个的"嗯"前);
+        // 同消耗数按权重降序;稳定排序,权重也相同时保持插入次序(精确>模糊>简拼)
+        val sorted = out.sortedWith(
+            compareByDescending<Triple<String, Int, Int>> { it.second }.thenByDescending { it.third }
+        )
+        return Pair(sorted.map { Candidate(it.first, it.second) }, segs)
+    }
+
+    /**
+     * 末字简拼:把末尾 t 个字母当作连续声母、前缀整段切成完整音节去查索引。
+     * 直接在原始字母串上枚举 t(不依赖贪心切分,避免 nihm 里 hm 被当成音节)。
+     */
+    private fun addPartAbbr(buf: String, nseg: Int, add: (String, Int, Int) -> Unit) {
+        if (partAbbr.isEmpty()) return
+        val letters = buf.replace("'", "")
+        val pool = ArrayList<Triple<String, Int, Int>>()
+        for (t in 1 until letters.length) {   // 末尾 t 个字母作声母,剩下作全拼前缀
+            val tail = letters.substring(letters.length - t)
+            if (!tail.all { it.toString() in INITIALS_1 }) break  // 出现非声母,再往左不可能全是声母
+            val pre = segment(letters.substring(0, letters.length - t))
+            if (!pre.all { it in syllables }) continue   // 前缀切不成完整音节
+            for ((ki, combo) in fuzzyKeys(pre).withIndex()) {
+                partAbbr[combo to tail]?.forEach { pool.add(Triple(it.word, it.weight, ki + t * 100)) }  // t 越小(全拼越多)越靠前
+            }
+        }
+        pool.sortWith(compareByDescending<Triple<String, Int, Int>> { it.second }.thenBy { it.third })
+        for (p in pool) add(p.first, nseg, p.second)
     }
 
     /**
@@ -198,7 +249,13 @@ class PinyinDict(raw: String) {
         lst.firstOrNull { it.word == word }?.weight = weight   // 共享实例,abbr 同步更新
         lst.sortByDescending { it.weight }
         val sylls = key.split(" ")
-        if (sylls.size >= 2) abbr[sylls.joinToString("") { it[0].toString() }]?.sortByDescending { it.weight }
+        if (sylls.size >= 2) {
+            abbr[sylls.joinToString("") { it[0].toString() }]?.sortByDescending { it.weight }   // 简拼桶
+            for (p in 1 until sylls.size) {   // 末字简拼各切分点
+                val inits = sylls.subList(p, sylls.size).joinToString("") { it[0].toString() }
+                partAbbr[sylls.subList(0, p).joinToString(" ") to inits]?.sortByDescending { it.weight }
+            }
+        }
     }
 
     companion object {
@@ -208,6 +265,8 @@ class PinyinDict(raw: String) {
         const val MAX_FUZZY_KEYS = 24
         const val ENABLE_SHOUPIN = true
         const val MAX_SHOUPIN_PER_KEY = 80
+        const val ENABLE_TAIL_INITIAL = true     // 末字简拼:前面音节全拼、末尾若干字只打声母,如 sej->设计、jisuanj->计算机
+        const val MAX_TAIL_INITIAL_PER_KEY = 80  // 每个「前缀+末声母」键保留多少候选(按词频)
 
         // 模糊音:每对双向等价;清空则关闭
         val FUZZY_PAIRS = listOf(

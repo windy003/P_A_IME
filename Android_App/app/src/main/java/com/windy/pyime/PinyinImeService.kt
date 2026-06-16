@@ -1236,7 +1236,8 @@ class PinyinImeService : InputMethodService() {
         root.addView(r3)
 
         val r4 = newRow()
-        r4.addView(makeKey("0", 3f) { onSymbolInput("0") })   // 0 横跨三列
+        r4.addView(makeKey("0", 2f) { onSymbolInput("0") })   // 0 横跨两列
+        r4.addView(makeKey(".", 1f) { onSymbolInput(".") })   // 小数点
         r4.addView(makeKey("⏎", 1f) { onEnter() })
         root.addView(r4)
         return root
