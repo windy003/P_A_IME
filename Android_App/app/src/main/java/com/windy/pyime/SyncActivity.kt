@@ -59,10 +59,9 @@ class SyncActivity : Activity() {
     // ---------------------------------------------------------------- 会话
     private fun prefs() = getSharedPreferences(PinyinImeService.PREFS, MODE_PRIVATE)
 
-    /** 返回 (url, token);任一为空视为未登录。 */
+    /** 返回 (url, token);token 为空视为未登录。url 固定为预置的 Worker 地址。 */
     private fun session(): Pair<String, String>? {
-        val stored = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
-        val url = if (stored.isNotEmpty()) stored else DEFAULT_SYNC_URL.trim()
+        val url = DEFAULT_SYNC_URL.trim()
         val token = prefs().getString(KEY_SYNC_TOKEN, "")?.trim().orEmpty()
         return if (url.isNotEmpty() && token.isNotEmpty()) url to token else null
     }
@@ -74,15 +73,6 @@ class SyncActivity : Activity() {
         box.addView(titleText("登录同步"))
         box.addView(bodyText("用管理员分配给你的账号登录。地址为你部署的 Worker 网址。"))
 
-        val urlEdit = EditText(this).apply {
-            hint = "Worker 地址,如 https://pyime-sync.xxx.workers.dev"
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-            val saved = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
-            setText(if (saved.isNotEmpty()) saved else DEFAULT_SYNC_URL)
-            // 已在 app 中预置地址时,隐藏输入框,用户只需填账号密码
-            if (DEFAULT_SYNC_URL.isNotEmpty()) visibility = android.view.View.GONE
-            layoutParams = mw()
-        }
         val userEdit = EditText(this).apply {
             hint = "用户名"
             inputType = InputType.TYPE_CLASS_TEXT
@@ -94,17 +84,17 @@ class SyncActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             layoutParams = mw()
         }
-        box.addView(urlEdit); box.addView(userEdit); box.addView(pwdEdit)
+        box.addView(userEdit); box.addView(pwdEdit)
 
         box.addView(Button(this).apply {
             text = "登录"
             layoutParams = mw()
             setOnClickListener {
-                val url = urlEdit.text.toString().trim()
+                val url = DEFAULT_SYNC_URL.trim()
                 val user = userEdit.text.toString().trim()
                 val pwd = pwdEdit.text.toString()
-                if (url.isEmpty() || user.isEmpty() || pwd.isEmpty()) {
-                    toast("请填写地址、用户名和密码"); return@setOnClickListener
+                if (user.isEmpty() || pwd.isEmpty()) {
+                    toast("请填写用户名和密码"); return@setOnClickListener
                 }
                 isEnabled = false; text = "登录中…"
                 Thread {
@@ -116,7 +106,7 @@ class SyncActivity : Activity() {
                     }
                     ui.post {
                         result.onSuccess { token ->
-                            onLoginSuccess(url, user, token)
+                            onLoginSuccess(user, token)
                         }.onFailure { e ->
                             isEnabled = true; text = "登录"
                             toast("登录失败:${e.message}")
@@ -130,7 +120,7 @@ class SyncActivity : Activity() {
         box.addView(Button(this).apply {
             text = "注册新账号(管理员)"
             layoutParams = mw()
-            setOnClickListener { showRegister(urlEdit.text.toString().trim()) }
+            setOnClickListener { showRegister() }
         })
 
         // 词库同步不依赖账号登录,登录页也提供入口
@@ -138,11 +128,10 @@ class SyncActivity : Activity() {
     }
 
     /** 登录成功:换了不同账号则先确认清空本机数据,再保存会话并进入比较。 */
-    private fun onLoginSuccess(url: String, user: String, token: String) {
+    private fun onLoginSuccess(user: String, token: String) {
         val prevUser = prefs().getString(KEY_SYNC_USER, "").orEmpty()
         fun save() {
             prefs().edit()
-                .putString(KEY_SYNC_URL, url)
                 .putString(KEY_SYNC_USER, user)
                 .putString(KEY_SYNC_TOKEN, token)
                 .apply()
@@ -162,25 +151,12 @@ class SyncActivity : Activity() {
         }
     }
 
-    private fun showRegister(prefillUrl: String) {
+    private fun showRegister() {
         val box = rootContainer ?: return
         box.removeAllViews()
         box.addView(titleText("注册新账号"))
         box.addView(bodyText("仅管理员可注册:需填写部署 Worker 时设置的管理员密钥(ADMIN_KEY)。"))
 
-        val urlEdit = EditText(this).apply {
-            hint = "Worker 地址"
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-            val saved = prefs().getString(KEY_SYNC_URL, "")?.trim().orEmpty()
-            setText(when {
-                prefillUrl.isNotEmpty() -> prefillUrl
-                saved.isNotEmpty() -> saved
-                else -> DEFAULT_SYNC_URL
-            })
-            // 已在 app 中预置地址时,隐藏输入框
-            if (DEFAULT_SYNC_URL.isNotEmpty()) visibility = android.view.View.GONE
-            layoutParams = mw()
-        }
         val adminEdit = EditText(this).apply {
             hint = "管理员密钥(ADMIN_KEY)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -196,17 +172,17 @@ class SyncActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             layoutParams = mw()
         }
-        box.addView(urlEdit); box.addView(adminEdit); box.addView(userEdit); box.addView(pwdEdit)
+        box.addView(adminEdit); box.addView(userEdit); box.addView(pwdEdit)
 
         box.addView(Button(this).apply {
             text = "注册"
             layoutParams = mw()
             setOnClickListener {
-                val url = urlEdit.text.toString().trim()
+                val url = DEFAULT_SYNC_URL.trim()
                 val admin = adminEdit.text.toString().trim()
                 val user = userEdit.text.toString().trim()
                 val pwd = pwdEdit.text.toString()
-                if (url.isEmpty() || admin.isEmpty() || user.isEmpty() || pwd.isEmpty()) {
+                if (admin.isEmpty() || user.isEmpty() || pwd.isEmpty()) {
                     toast("请填写全部字段"); return@setOnClickListener
                 }
                 isEnabled = false; text = "注册中…"
@@ -217,7 +193,7 @@ class SyncActivity : Activity() {
                         isEnabled = true; text = "注册"
                         if (err == null) {
                             // 注册成功:回登录页,预填好地址和用户名
-                            prefs().edit().putString(KEY_SYNC_URL, url).putString(KEY_SYNC_USER, user).apply()
+                            prefs().edit().putString(KEY_SYNC_USER, user).apply()
                             toast("注册成功,请用新账号登录")
                             showLogin()
                         } else {
@@ -234,7 +210,7 @@ class SyncActivity : Activity() {
     }
 
     private fun logout() {
-        prefs().edit().remove(KEY_SYNC_TOKEN).apply()   // 保留 url/用户名方便下次登录
+        prefs().edit().remove(KEY_SYNC_TOKEN).apply()   // 保留用户名方便下次登录
         diffs.clear()
         showLogin()
     }
@@ -651,10 +627,9 @@ class SyncActivity : Activity() {
 
     companion object {
         // 预置的 Worker 地址:填上你部署的 workers.dev 网址(如 "https://pyime.xxx.workers.dev")。
-        // 非空时,登录/注册页会自动用它,且不再显示「Worker 地址」输入框;留空则维持手动填写。
+        // 登录/注册统一使用该地址,app 内不再提供「Worker 地址」输入框。
         const val DEFAULT_SYNC_URL = "https://pyime.mybrowser.workers.dev"
 
-        const val KEY_SYNC_URL = "sync_url"
         const val KEY_SYNC_USER = "sync_user"
         const val KEY_SYNC_TOKEN = "sync_token"
         const val KEY_SERVER_IP = "dict_server_ip"   // 「我的服务器同步」上次填的 IP
