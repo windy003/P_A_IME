@@ -123,6 +123,7 @@ class PinyinImeService : InputMethodService() {
     /** 字母键上滑可输入的符号:长按字母向上滑动即输入对应符号。 */
     private val swipeSymbols = mapOf(
         'a' to "!",
+        's' to "@",
         'q' to "'",
         'w' to "\"",
         'e' to ":",
