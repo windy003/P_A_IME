@@ -20,6 +20,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.inputmethod.ExtractedTextRequest
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -128,6 +129,8 @@ class PinyinImeService : InputMethodService() {
         'r' to "/",
         't' to "\\",
         'u' to "?",
+        'o' to "-",
+        'p' to "_",
     )
 
     override fun onCreate() {
@@ -1567,10 +1570,48 @@ class PinyinImeService : InputMethodService() {
             ic.setSelection(minOf(selAnchor, newEnd), maxOf(selAnchor, newEnd))
             return
         }
+        // 选择模式下上/下键:按行扩展选区(尽量保留列位置)。成功则返回,
+        // 取不到整段文本时(部分编辑框不支持)再走下面的按键事件兜底。
+        if (selecting && (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN)) {
+            if (selectByLine(ic, keyCode == KeyEvent.KEYCODE_DPAD_DOWN)) return
+        }
         val meta = if (selecting) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0
         val now = System.currentTimeMillis()
         ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
         ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, meta))
+    }
+
+    /**
+     * 选择模式下按行扩展选区:把「移动端」上移/下移一行(列位置尽量保持),
+     * 再以锚点为固定端重设选区。返回是否成功(取不到整段文本时返回 false 交给兜底)。
+     */
+    private fun selectByLine(ic: android.view.inputmethod.InputConnection, down: Boolean): Boolean {
+        val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return false
+        val text = et.text?.toString() ?: return false
+        val base = et.startOffset.coerceAtLeast(0)            // 整段文本在原文中的起始偏移
+        val movingEnd = if (curSelEnd != selAnchor) curSelEnd else curSelStart
+        val pos = (movingEnd - base).coerceIn(0, text.length) // 移动端在整段文本中的下标
+        val lineStart = text.lastIndexOf('\n', pos - 1).let { if (it < 0) 0 else it + 1 }
+        val column = pos - lineStart
+        val target: Int = if (down) {
+            val lineEnd = text.indexOf('\n', pos).let { if (it < 0) text.length else it }
+            if (lineEnd >= text.length) text.length            // 已是最后一行:选到末尾
+            else {
+                val nextStart = lineEnd + 1
+                val nextEnd = text.indexOf('\n', nextStart).let { if (it < 0) text.length else it }
+                minOf(nextStart + column, nextEnd)
+            }
+        } else {
+            if (lineStart == 0) 0                              // 已是第一行:选到开头
+            else {
+                val prevEnd = lineStart - 1                     // 上一行末尾的换行符位置
+                val prevStart = text.lastIndexOf('\n', prevEnd - 1).let { if (it < 0) 0 else it + 1 }
+                minOf(prevStart + column, prevEnd)
+            }
+        }
+        val g = target + base
+        ic.setSelection(minOf(selAnchor, g), maxOf(selAnchor, g))
+        return true
     }
 
     private fun toggleSelecting() {
