@@ -26,6 +26,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.vision.digitalink.DigitalInkRecognition
@@ -62,7 +63,12 @@ class PinyinImeService : InputMethodService() {
     private var pinyinPreview: TextView? = null
     private var candidatesScroll: HorizontalScrollView? = null
     private var candidatesContainer: LinearLayout? = null
-    private var toolbarRow: LinearLayout? = null   // 常驻工具条(无拼音输入时占据候选区位置)
+    private var toolbarRow: LinearLayout? = null   // 常驻工具条容器(顶栏 + 展开面板)
+    private var toolbarTopRow: LinearLayout? = null     // 顶部一行:展开按钮 + 前若干个按钮
+    private var toolbarExtraPanel: LinearLayout? = null // 展开面板:其余按钮 / 排序编辑
+    private var toolbarExpanded = false                 // 展开面板是否打开
+    private var toolbarEditing = false                  // 是否处于按钮排序编辑模式
+    private var toolOrder: MutableList<String> = mutableListOf()  // 工具按钮顺序(存按钮 id)
     private var modeKey: TextView? = null
 
     private var rowHeightDp = DEFAULT_ROW_HEIGHT   // 当前键盘行高(可在设置页调节)
@@ -283,22 +289,214 @@ class PinyinImeService : InputMethodService() {
         return root
     }
 
-    /** 常驻工具条:无拼音输入时显示,放剪贴板/光标/收起等快捷入口。 */
+    /** 工具按钮定义:id 用于持久化顺序,icon 是显示图标,label 是排序编辑时的文字说明。 */
+    private data class ToolDef(val id: String, val icon: String, val label: String)
+
+    /** 全部可用的工具按钮(顺序仅作为首次使用时的默认排序)。 */
+    private val toolDefs = listOf(
+        ToolDef("clip", "📋", "剪贴板"),
+        ToolDef("phrase", "📝", "常用语"),
+        ToolDef("paste", "⎘", "粘贴最近"),
+        ToolDef("cursor", "✥", "光标"),
+        ToolDef("hide", "⌄", "收起键盘"),
+        ToolDef("handwriting", "✍", "手写"),
+        ToolDef("sync", "☁", "同步"),
+    )
+
+    /** 执行某个工具按钮的动作。 */
+    private fun runToolAction(id: String) {
+        when (id) {
+            "clip" -> { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() }
+            "phrase" -> { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() }
+            "paste" -> pasteRecentClip()
+            "cursor" -> openCursorPanel()
+            "hide" -> onHide()
+            "handwriting" -> openHandwriting()
+            "sync" -> openSync()
+        }
+    }
+
+    /** 从设置读取按钮顺序;补齐新增按钮、剔除已失效的 id。 */
+    private fun loadToolOrder() {
+        val saved = prefs().getString(KEY_TOOL_ORDER, null)
+            ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        val validIds = toolDefs.map { it.id }
+        val order = saved.filter { it in validIds }.toMutableList()
+        for (id in validIds) if (id !in order) order.add(id)   // 补齐(含将来新增)
+        toolOrder = order
+    }
+
+    private fun saveToolOrder() {
+        prefs().edit().putString(KEY_TOOL_ORDER, toolOrder.joinToString(",")).apply()
+    }
+
+    /** 粘贴最近一条剪贴板历史。 */
+    private fun pasteRecentClip() {
+        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
+        val clip = dataStore?.recentClips(1)?.firstOrNull()
+        if (clip == null) {
+            Toast.makeText(this, "剪贴板暂无记录", Toast.LENGTH_SHORT).show()
+            return
+        }
+        commitText(clip.content)
+        dataStore?.touchClip(clip.uuid)   // 置顶到最近
+    }
+
+    /**
+     * 常驻工具条:无拼音输入时显示。顶栏放展开按钮 + 前 TOOL_TOP_COUNT 个按钮,
+     * 其余按钮收进展开面板;展开后可点「编辑排序」长按拖动调整全部按钮顺序。
+     */
     private fun buildToolbar(): LinearLayout {
-        val row = LinearLayout(this).apply {
+        loadToolOrder()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        toolbarTopRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(82)   // = 预览32 + 候选50,保证不跳动
             )
         }
-        row.addView(toolbarButton("✍") { openHandwriting() })
-        row.addView(toolbarButton("📋") { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() })
-        row.addView(toolbarButton("📝") { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() })
-        row.addView(toolbarButton("☁") { openSync() })
-        row.addView(toolbarButton("✥") { openCursorPanel() })
-        row.addView(toolbarButton("⌄") { onHide() })
+        toolbarExtraPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(colPanelBg())
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(toolbarTopRow)
+        container.addView(toolbarExtraPanel)
+        renderToolbar()
+        return container
+    }
+
+    /** 根据当前顺序与展开/编辑状态重建整个工具条。 */
+    private fun renderToolbar() {
+        renderToolbarTop()
+        val extra = toolbarExtraPanel ?: return
+        extra.removeAllViews()
+        extra.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
+        if (!toolbarExpanded) { toolbarEditing = false; return }
+        if (toolbarEditing) renderToolbarEditList(extra) else renderToolbarExtra(extra)
+    }
+
+    /** 只刷新顶栏(展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
+    private fun renderToolbarTop() {
+        val top = toolbarTopRow ?: return
+        top.removeAllViews()
+        top.addView(toolbarButton(if (toolbarExpanded) "▲" else "☰") { toggleToolbarExpanded() })
+        // 顶栏从右到左对应排序列表第 1、2…个:下拉按钮居最左,动作按钮反序排列
+        for (id in toolOrder.take(TOOL_TOP_COUNT).reversed()) top.addView(toolbarButton(toolIcon(id)) {
+            if (toolbarExpanded) collapseToolbar(); runToolAction(id)
+        })
+    }
+
+    /** 展开面板(非编辑):编辑入口 + 其余按钮。 */
+    private fun renderToolbarExtra(extra: LinearLayout) {
+        val opRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        opRow.addView(textButton("✎ 编辑排序") { toolbarEditing = true; renderToolbar() })
+        extra.addView(opRow)
+
+        val panelIds = toolOrder.drop(TOOL_TOP_COUNT)
+        if (panelIds.isEmpty()) {
+            extra.addView(emptyHint("按钮都在顶栏。点「编辑排序」可把按钮挪到这里。"))
+            return
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        for (id in panelIds) row.addView(toolbarButton(toolIcon(id)) {
+            collapseToolbar(); runToolAction(id)
+        })
+        repeat((TOOL_TOP_COUNT - panelIds.size).coerceAtLeast(0)) {
+            row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f) })
+        }
+        extra.addView(row)
+    }
+
+    /** 展开面板(编辑模式):全部按钮竖排,长按拖动排序;前 TOOL_TOP_COUNT 个进顶栏。 */
+    private fun renderToolbarEditList(extra: LinearLayout) {
+        extra.addView(emptyHint("长按拖动调整顺序。前 $TOOL_TOP_COUNT 个显示在顶栏,其余在此展开面板。").apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        })
+        val opRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        opRow.addView(textButton("✓ 完成") { toolbarEditing = false; renderToolbar() })
+        extra.addView(opRow)
+
+        val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        extra.addView(listContainer)
+        for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
+    }
+
+    /** 排序编辑中的一行:图标 + 名称 + 拖动手柄;row.tag = id。 */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun toolEditRow(id: String, container: LinearLayout): View {
+        val def = toolDefs.first { it.id == id }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                setColor(colSurface())
+                cornerRadius = dp(6).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(6), dp(3), dp(6), dp(3)) }
+            tag = id
+        }
+        row.addView(TextView(this).apply {
+            text = "${def.icon}  ${def.label}"
+            textSize = 14f
+            setTextColor(colText())
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val handle = TextView(this).apply {
+            text = "≡"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setPadding(dp(12), dp(10), dp(14), dp(10))
+        }
+        handle.setOnTouchListener(makeDragTouch(row, container) { persistToolOrder(it) })
+        row.addView(handle)
         return row
+    }
+
+    /** 按编辑列表当前顺序(row.tag = id)写回按钮顺序,并实时刷新顶栏。 */
+    private fun persistToolOrder(container: LinearLayout) {
+        val ids = (0 until container.childCount).mapNotNull { container.getChildAt(it).tag as? String }
+        if (ids.isEmpty()) return
+        toolOrder = ids.toMutableList()
+        saveToolOrder()
+        renderToolbarTop()
+    }
+
+    private fun toolIcon(id: String) = toolDefs.first { it.id == id }.icon
+
+    private fun toggleToolbarExpanded() {
+        toolbarExpanded = !toolbarExpanded
+        if (!toolbarExpanded) toolbarEditing = false
+        renderToolbar()
+    }
+
+    /** 收起展开面板(点按钮执行动作前调用,回到键盘时保持简洁)。 */
+    private fun collapseToolbar() {
+        toolbarExpanded = false
+        toolbarEditing = false
+        renderToolbar()
     }
 
     private fun toolbarButton(text: String, onClick: () -> Unit): TextView {
@@ -966,7 +1164,11 @@ class PinyinImeService : InputMethodService() {
      * 其他行根据当前目标位置用带动画的 translationY 上下让位;松手时才真正重排并清除位移、持久化。
      */
     @SuppressLint("ClickableViewAccessibility")
-    private fun makeDragTouch(row: View, container: LinearLayout) = object : View.OnTouchListener {
+    private fun makeDragTouch(
+        row: View,
+        container: LinearLayout,
+        onDrop: (LinearLayout) -> Unit = { persistPhraseOrder(it) }
+    ) = object : View.OnTouchListener {
         var startRawY = 0f
         var origIndex = -1
         var target = -1
@@ -1031,7 +1233,7 @@ class PinyinImeService : InputMethodService() {
                             container.removeViewAt(cur)
                             container.addView(row, finalTarget.coerceIn(0, container.childCount))
                         }
-                        persistPhraseOrder(container)
+                        onDrop(container)
                     }
                     return true
                 }
@@ -1751,6 +1953,8 @@ class PinyinImeService : InputMethodService() {
     companion object {
         const val PREFS = "pyime"
         const val KEY_ROW_HEIGHT = "row_height_dp"
+        const val KEY_TOOL_ORDER = "toolbar_order"   // 工具按钮顺序(逗号分隔的 id)
+        const val TOOL_TOP_COUNT = 5                  // 顶栏工具按钮个数(+下拉按钮共 6 个),其余进展开面板
         const val DEFAULT_ROW_HEIGHT = 46
         const val MIN_ROW_HEIGHT = 36
         const val MAX_ROW_HEIGHT = 76
