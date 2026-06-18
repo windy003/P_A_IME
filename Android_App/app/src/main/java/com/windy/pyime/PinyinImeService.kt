@@ -841,7 +841,7 @@ class PinyinImeService : InputMethodService() {
         }
         row.addView(TextView(this).apply {
             this.text = text
-            textSize = 16f
+            textSize = 12f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(colText())
@@ -921,11 +921,11 @@ class PinyinImeService : InputMethodService() {
 
         val textView = TextView(this).apply {
             text = p.content
-            textSize = 16f
+            textSize = 12f
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(colText())
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             isClickable = true
             isLongClickable = true
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -946,10 +946,10 @@ class PinyinImeService : InputMethodService() {
         if (draggable && container != null) {
             val handle = TextView(this).apply {
                 text = "≡"
-                textSize = 20f
+                textSize = 14f
                 gravity = Gravity.CENTER
                 setTextColor(Color.parseColor("#9AA0A6"))
-                setPadding(dp(14), dp(12), dp(16), dp(12))
+                setPadding(dp(12), dp(6), dp(14), dp(6))
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 )
@@ -1050,14 +1050,14 @@ class PinyinImeService : InputMethodService() {
     private fun chip(text: String, selected: Boolean, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
-            textSize = 14f
+            textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(if (selected) Color.WHITE else colText())
             background = GradientDrawable().apply {
                 setColor(if (selected) Color.parseColor("#4A90D9") else colSurface())
                 cornerRadius = dp(14).toFloat()
             }
-            setPadding(dp(14), dp(6), dp(14), dp(6))
+            setPadding(dp(12), dp(5), dp(12), dp(5))
             isClickable = true
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1075,14 +1075,14 @@ class PinyinImeService : InputMethodService() {
         val selected = currentFolder?.uuid == folder.uuid
         val tv = TextView(this).apply {
             text = folder.name
-            textSize = 14f
+            textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(if (selected) Color.WHITE else colText())
             background = GradientDrawable().apply {
                 setColor(if (selected) Color.parseColor("#4A90D9") else colSurface())
                 cornerRadius = dp(14).toFloat()
             }
-            setPadding(dp(14), dp(6), dp(14), dp(6))
+            setPadding(dp(12), dp(5), dp(12), dp(5))
             isClickable = true
             isLongClickable = true
             tag = folder.uuid
@@ -1202,9 +1202,9 @@ class PinyinImeService : InputMethodService() {
     private fun textButton(text: String, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
-            textSize = 14f
+            textSize = 12f
             setTextColor(Color.parseColor("#4A90D9"))
-            setPadding(dp(8), dp(8), dp(16), dp(8))
+            setPadding(dp(6), dp(6), dp(12), dp(6))
             isClickable = true
             setOnClickListener { onClick() }
         }
