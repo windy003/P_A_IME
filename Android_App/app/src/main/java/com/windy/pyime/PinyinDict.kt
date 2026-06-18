@@ -272,7 +272,8 @@ class PinyinDict(raw: String) {
         val FUZZY_PAIRS = listOf(
             "z" to "zh", "c" to "ch", "s" to "sh",   // 平翘舌
             "en" to "eng", "in" to "ing",
-            "l" to "r", "on" to "ong"
+            "l" to "r", "on" to "ong",
+            "n" to "l"                               // l/n 不分(南方口音):leixin/neixin 都能出「类型」
         )
 
         val INITIALS_2 = setOf("zh", "ch", "sh")
