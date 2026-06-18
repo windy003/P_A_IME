@@ -13,6 +13,11 @@ version: "0.1"
 sort: by_weight
 ...
 
+
+
+
+
+怎么实现的	zheng mo shi xian de	100
 父神	fu sheng	33624
 刷新	sua xin	28783
 什么配置	sheng mo pei zhi	200
@@ -61,7 +66,7 @@ sort: by_weight
 树状结构	shu zhuang jie gou	100
 时间戳	shi jian cuo	798
 闪退	san tui	100
-长按	chang an	1268
+长按	chang an	1270
 横杠	heng gang	100
 那么	na mo	185
 是的	shi de	8579
@@ -72,7 +77,7 @@ sort: by_weight
 这样子	zhe yang zhi	2230
 是什么	shi sheng mo	578
 简拼	jian pin	4630
-安卓	an zhuo	19405
+安卓	an zhuo	19406
 就这样子	jiu zhe yang zhi	100
 鼥	ba	0
 釛	ba	0
@@ -11112,7 +11117,7 @@ sort: by_weight
 折	zhe	3927
 者	zhe	178114
 着	zhe	178116
-这	zhe	178115
+这	zhe	178117
 黰	zhen	0
 蜄	zhen	0
 縥	zhen	0
@@ -13470,7 +13475,7 @@ sort: by_weight
 宰	zai	836
 仔	zai	1416
 载	zai	2159
-再	zai	974747
+再	zai	974749
 在	zai	974748
 酇	zan	0
 饡	zan	0
@@ -20428,7 +20433,7 @@ sort: by_weight
 迷惘	mi wang	360
 迷雾	mi wu	296
 米尔	mi er	168
-面板	mian ban	19977
+面板	mian ban	19978
 面包	mian bao	2289
 棉被	mian bei	219
 面壁	mian bi	171
@@ -21389,7 +21394,7 @@ sort: by_weight
 粉笔	fen bi	187
 粪便	fen bian	445
 分辨	fen bian	772
-分别	fen bie	16502
+分别	fen bie	16503
 粉饼	fen bing	145
 分步	fen bu	121
 分部	fen bu	465
@@ -21914,7 +21919,7 @@ sort: by_weight
 肤质	fu zhi	203
 福祉	fu zhi	323
 赋值	fu zhi	476
-复制	fu zhi	54050
+复制	fu zhi	54055
 抚州	fu zhou	114
 符咒	fu zhou	115
 福州	fu zhou	2708
@@ -23283,7 +23288,7 @@ sort: by_weight
 地震	di zhen	4745
 地质	di zhi	1066
 抵制	di zhi	1483
-地址	di zhi	18485
+地址	di zhi	18486
 地主	di zhu	938
 地产	di chan	2883
 低潮	di chao	184
@@ -23415,7 +23420,7 @@ sort: by_weight
 电极	dian ji	413
 惦记	dian ji	607
 电机	dian ji	1202
-点击	dian ji	67809
+点击	dian ji	67811
 店家	dian jia	317
 电价	dian jia	409
 电教	dian jiao	110
@@ -24143,7 +24148,7 @@ sort: by_weight
 对内	dui nei	209
 对你	dui ni	4195
 对您	dui nin	220
-对了	dui le	9961
+对了	dui le	22704
 堆里	dui li	199
 队里	dui li	252
 对立	dui li	835
@@ -24481,7 +24486,7 @@ sort: by_weight
 坦承	tan cheng	176
 坦诚	tan cheng	524
 贪吃	tan chi	137
-弹出	tan chu	1768
+弹出	tan chu	21019
 坦率	tan shuai	296
 摊上	tan shang	129
 探视	tan shi	136
@@ -24730,7 +24735,7 @@ sort: by_weight
 体形	ti xing	285
 题型	ti xing	347
 体型	ti xing	506
-提醒	ti xing	6957
+提醒	ti xing	29716
 体恤	ti xu	119
 提着	ti zhe	550
 提振	ti zhen	146
@@ -24840,7 +24845,7 @@ sort: by_weight
 天极	tian ji	297
 天际	tian ji	359
 天价	tian jia	543
-添加	tian jia	18451
+添加	tian jia	18452
 田间	tian jian	472
 天骄	tian jiao	181
 天降	tian jiang	117
@@ -24928,7 +24933,7 @@ sort: by_weight
 调皮	tiao pi	677
 调频	tiao pin	141
 条码	tiao ma	482
-条目	tiao mu	156268
+条目	tiao mu	156269
 条幅	tiao fu	161
 调到	tiao dao	315
 跳到	tiao dao	538
@@ -24976,7 +24981,7 @@ sort: by_weight
 挑战	tiao zhan	5924
 挑着	tiao zhe	114
 跳着	tiao zhe	173
-调整	tiao zheng	24133
+调整	tiao zheng	24139
 调至	tiao zhi	193
 调制	tiao zhi	409
 调成	tiao cheng	203
@@ -26150,7 +26155,7 @@ sort: by_weight
 尼克	ni ke	224
 你可	ni ke	775
 你还	ni hai	3685
-你好	ni hao	20728
+你好	ni hao	20729
 拟合	ni he	173
 你和	ni he	862
 你很	ni hen	503
@@ -29206,7 +29211,7 @@ sort: by_weight
 共同	gong tong	11597
 供暖	gong nuan	403
 宫女	gong nv	333
-功能	gong neng	34257
+功能	gong neng	34258
 宫内	gong nei	182
 公牛	gong niu	355
 工农	gong nong	199
@@ -30344,7 +30349,7 @@ sort: by_weight
 可视	ke shi	466
 科室	ke shi	939
 可使	ke shi	1137
-可是	ke shi	78155
+可是	ke shi	78158
 恪守	ke shou	185
 棵树	ke shu	225
 可说	ke shuo	695
@@ -30375,7 +30380,7 @@ sort: by_weight
 可以	ke yi	304387
 刻有	ke you	128
 可由	ke you	272
-可有	ke you	426
+可有	ke you	304389
 可用	ke yong	2491
 课余	ke yu	169
 可与	ke yu	324
@@ -30387,7 +30392,7 @@ sort: by_weight
 可为	ke wei	296
 可谓	ke wei	2309
 可我	ke wo	1311
-可恶	ke wu	995
+可恶	ke wu	3908
 可爱	ke ai	10575
 可按	ke an	261
 可儿	ke er	115
@@ -30474,7 +30479,7 @@ sort: by_weight
 恐龙	kong long	1157
 空港	kong gang	158
 控告	kong gao	238
-空格	kong ge	8656
+空格	kong ge	8657
 控股	kong gu	1824
 空旷	kong kuang	367
 空壳	kong ke	117
@@ -30636,7 +30641,7 @@ sort: by_weight
 花掉	hua diao	250
 划定	hua ding	337
 话都	hua dou	137
-滑动	hua dong	943
+滑动	hua dong	66550
 华东	hua dong	942
 花都	hua du	272
 花朵	hua duo	929
@@ -32173,7 +32178,7 @@ sort: by_weight
 或许	huo xu	8387
 获准	huo zhun	324
 活着	huo zhe	3703
-或者	huo zhe	54519
+或者	huo zhe	54520
 获知	huo zhi	282
 火种	huo zhong	160
 货主	huo zhu	133
@@ -34923,7 +34928,7 @@ sort: by_weight
 巨额	ju e	1205
 全班	quan ban	553
 全包	quan bao	199
-全部	quan bu	23131
+全部	quan bu	23135
 全盘	quan pan	423
 全片	quan pian	119
 全凭	quan ping	2221
@@ -35794,7 +35799,7 @@ sort: by_weight
 亲王	qin wang	315
 亲吻	qin wen	707
 亲爱	qin ai	3541
-请把	qing ba	318
+请把	qing ba	23133
 清白	qing bai	483
 情报	qing bao	1643
 轻便	qing bian	241
@@ -35838,7 +35843,7 @@ sort: by_weight
 蜻蜓	qing ting	315
 倾听	qing ting	815
 青铜	qing tong	401
-请你	qing ni	13021
+请你	qing ni	13024
 青年	qing nian	5276
 青鸟	qing niao	225
 请您	qing nin	4652
@@ -36974,7 +36979,7 @@ sort: by_weight
 县市	xian shi	380
 先是	xian shi	1348
 现实	xian shi	12054
-显示	xian shi	34001
+显示	xian shi	34005
 娴熟	xian shu	269
 先说	xian shuo	622
 显然	xian ran	5436
@@ -36986,7 +36991,7 @@ sort: by_weight
 陷入	xian ru	2883
 闲杂	xian za	246280
 先在	xian zai	442
-现在	xian zai	246326
+现在	xian zai	246330
 仙子	xian zi	712
 先走	xian zou	351
 先祖	xian zu	136
@@ -37417,7 +37422,7 @@ sort: by_weight
 相片	xiang pian	2067
 想买	xiang mai	1319
 相貌	xiang mao	686
-项目	xiang mu	41143
+项目	xiang mu	41145
 想法	xiang fa	11816
 襄樊	xiang fan	385
 相反	xiang fan	2292
@@ -38919,7 +38924,7 @@ sort: by_weight
 这两	zhe liang	1408
 遮盖	zhe gai	267
 这歌	zhe ge	288
-这个	zhe ge	253469
+这个	zhe ge	253476
 这跟	zhe gen	232
 这根	zhe gen	246
 这更	zhe geng	107
@@ -39922,7 +39927,7 @@ sort: by_weight
 重担	zhong dan	226
 中档	zhong dang	225
 中德	zhong de	154
-中的	zhong de	144486
+中的	zhong de	144487
 中等	zhong deng	900
 中的	zhong di	164
 种地	zhong di	287
@@ -40265,7 +40270,7 @@ sort: by_weight
 诸神	zhu shen	116
 主食	zhu shi	298
 注视	zhu shi	872
-注释	zhu shi	58103
+注释	zhu shi	58104
 驻守	zhu shou	155
 助手	zhu shou	1155
 著述	zhu shu	126
@@ -41143,7 +41148,7 @@ sort: by_weight
 成龙	cheng long	919
 城关	cheng guan	140
 城管	cheng guan	981
-成功	cheng gong	27438
+成功	cheng gong	27439
 成果	cheng guo	5032
 撑开	cheng kai	178
 乘客	cheng ke	1866
@@ -41544,7 +41549,7 @@ sort: by_weight
 处男	chu nan	587
 初年	chu nian	138
 初来	chu lai	121
-出来	chu lai	59118
+出来	chu lai	59120
 出栏	chu lan	120
 出了	chu le	7498
 除了	chu le	24283
@@ -41993,7 +41998,7 @@ sort: by_weight
 擅长	shan chang	1555
 山城	shan cheng	198
 闪出	shan chu	107
-删除	shan chu	54054
+删除	shan chu	54055
 杉杉	shan shan	136
 姗姗	shan shan	200
 珊珊	shan shan	206
@@ -43062,7 +43067,7 @@ sort: by_weight
 时限	shi xian	470
 视线	shi xian	1431
 事先	shi xian	2183
-实现	shi xian	28778
+实现	shi xian	28785
 时效	shi xiao	258
 实效	shi xiao	492
 失效	shi xiao	1015
@@ -43468,7 +43473,7 @@ sort: by_weight
 收治	shou zhi	130
 受制	shou zhi	214
 收支	shou zhi	397
-手指	shou zhi	3173
+手指	shou zhi	22907
 受众	shou zhong	799
 手中	shou zhong	4560
 守住	shou zhu	381
@@ -44103,7 +44108,7 @@ sort: by_weight
 人行	ren hang	185
 仁和	ren he	123
 人和	ren he	255
-任何	ren he	24926
+任何	ren he	69605
 人很	ren hen	127
 人会	ren hui	450
 人均	ren jun	1859
@@ -44833,7 +44838,7 @@ sort: by_weight
 责问	ze wen	107
 则为	ze wei	472
 择偶	ze ou	153
-怎么	zen me	173083
+怎么	zen me	173084
 怎能	zen neng	725
 怎会	zen hui	312
 怎样	zen yang	14659
@@ -45846,7 +45851,7 @@ sort: by_weight
 次第	ci di	128
 此地	ci di	457
 辞典	ci dian	513
-词典	ci dian	10071
+词典	ci dian	10073
 辞掉	ci diao	126
 祠堂	ci tang	161
 词条	ci tiao	170
@@ -45990,7 +45995,7 @@ sort: by_weight
 粗心	cu xin	252
 粗壮	cu zhuang	204
 促成	cu cheng	638
-促使	cu shi	1768
+促使	cu shi	24992
 粗糙	cu cao	1093
 醋酸	cu suan	168
 猝死	cu si	222
@@ -47945,7 +47950,7 @@ sort: by_weight
 异动	yi dong	240
 一动	yi dong	438
 一栋	yi dong	523
-移动	yi dong	11905
+移动	yi dong	56123
 一睹	yi du	194
 一度	yi du	2433
 亿多	yi duo	189
@@ -49856,7 +49861,7 @@ sort: by_weight
 忘我	wang wo	199
 王二	wang er	135
 温饱	wen bao	387
-文本	wen ben	10192
+文本	wen ben	10195
 文笔	wen bi	773
 稳步	wen bu	1028
 文凭	wen ping	1026
@@ -49918,7 +49923,7 @@ sort: by_weight
 问及	wen ji	341
 文集	wen ji	589
 稳健	wen jian	1173
-文件	wen jian	31875
+文件	wen jian	31877
 文教	wen jiao	143
 温江	wen jiang	133
 文静	wen jing	377
@@ -50846,7 +50851,7 @@ sort: by_weight
 安南	an nan	263
 安妮	an ni	385
 安宁	an ning	647
-按钮	an niu	4065
+按钮	an niu	4068
 安乐	an le	205
 按理	an li	142
 安利	an li	849
@@ -53514,7 +53519,7 @@ sort: by_weight
 流通股	liu tong gu	448
 六年级	liu nian ji	156
 浏览量	liu lan liang	166
-浏览器	liu lan qi	4349
+浏览器	liu lan qi	4350
 浏览者	liu lan zhe	132
 流浪猫	liu lang mao	117
 流浪狗	liu lang gou	123
@@ -54017,7 +54022,7 @@ sort: by_weight
 开玩笑	kai wan xiao	2857
 凯恩斯	kai en si	107
 看病难	kan bing nan	130
-看不到	kan bu dao	5728
+看不到	kan bu dao	5729
 看不懂	kan bu dong	1880
 看不惯	kan bu guan	436
 看不见	kan bu jian	2230
@@ -55856,7 +55861,7 @@ sort: by_weight
 这么慢	zhe me man	161
 这么大	zhe me da	1824
 这么点	zhe me dian	155
-这么多	zhe me duo	4957
+这么多	zhe me duo	4958
 这么难	zhe me nan	203
 这么好	zhe me hao	1318
 这么久	zhe me jiu	1002
@@ -58275,7 +58280,7 @@ sort: by_weight
 未知数	wei zhi shu	213
 胃肠道	wei chang dao	208
 未成年	wei cheng nian	1276
-为什么	wei shen me	50915
+为什么	wei shen me	50916
 卫生部	wei sheng bu	806
 卫生间	wei sheng jian	1359
 卫生巾	wei sheng jin	263
@@ -60124,7 +60129,7 @@ sort: by_weight
 理直气壮	li zhi qi zhuang	375
 历史背景	li shi bei jing	141
 历史条件	li shi tiao jian	132
-历史记录	li shi ji lu	186
+历史记录	li shi ji lu	188
 历史进程	li shi jin cheng	139
 历史经验	li shi jing yan	110
 历史学家	li shi xue jia	227
@@ -60911,7 +60916,7 @@ sort: by_weight
 可以随时	ke yi sui shi	496
 可以用来	ke yi yong lai	412
 可以用于	ke yi yong yu	153
-可有可无	ke you ke wu	177
+可有可无	ke you ke wu	178
 口口声声	kou kou sheng sheng	268
 口腔溃疡	kou qiang kui yang	162
 恐怖分子	kong bu fen zi	492

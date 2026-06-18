@@ -815,7 +815,7 @@ class PinyinImeService : InputMethodService() {
     }
 
     // ---- 面板内的小部件 ----
-    /** 一行列表项:左侧文本(可点击上屏),右侧 ✕ 删除。 */
+    /** 一行列表项:左侧文本(可点击上屏),右侧 ✕ 删除按钮默认隐藏,长按文本后显示/收起。 */
     private fun listItem(text: String, onClick: () -> Unit, onDelete: () -> Unit): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -828,6 +828,17 @@ class PinyinImeService : InputMethodService() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(6), dp(3), dp(6), dp(3)) }
         }
+        // ✕ 删除按钮:默认隐藏,长按文本后出现
+        val delBtn = TextView(this).apply {
+            this.text = "✕"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            isClickable = true
+            visibility = View.GONE
+            setOnClickListener { onDelete() }
+        }
         row.addView(TextView(this).apply {
             this.text = text
             textSize = 16f
@@ -836,18 +847,17 @@ class PinyinImeService : InputMethodService() {
             setTextColor(colText())
             setPadding(dp(12), dp(12), dp(12), dp(12))
             isClickable = true
+            isLongClickable = true
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener { onClick() }
+            setOnLongClickListener {
+                // 长按切换:显示/隐藏删除按钮
+                delBtn.visibility =
+                    if (delBtn.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                true
+            }
         })
-        row.addView(TextView(this).apply {
-            this.text = "✕"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#9AA0A6"))
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            isClickable = true
-            setOnClickListener { onDelete() }
-        })
+        row.addView(delBtn)
         return row
     }
 
