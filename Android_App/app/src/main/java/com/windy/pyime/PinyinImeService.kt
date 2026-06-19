@@ -126,20 +126,32 @@ class PinyinImeService : InputMethodService() {
     private val ROW2 = "asdfghjkl"
     private val ROW3 = "zxcvbnm"
 
-    /** 字母键上滑可输入的符号:长按字母向上滑动即输入对应符号。 */
+    /** 字母键上滑可输入的符号/数字:点字母打拼音,向上滑动则输入对应字符。 */
     private val swipeSymbols = mapOf(
+        // 顶行 qwertyuiop 上滑输入数字 1234567890
+        'q' to "1",
+        'w' to "2",
+        'e' to "3",
+        'r' to "4",
+        't' to "5",
+        'y' to "6",
+        'u' to "7",
+        'i' to "8",
+        'o' to "9",
+        'p' to "0",
+        // 原顶行符号下移到下两行字母(a→! s→@ 保留)
         'a' to "!",
         's' to "@",
-        'q' to "'",
-        'w' to "\"",
-        'e' to ":",
-        'i' to "+",
-        'y' to "*",
-        'r' to "/",
-        't' to "\\",
-        'u' to "?",
-        'o' to "-",
-        'p' to "_",
+        'd' to "'",
+        'f' to "\"",
+        'g' to ":",
+        'h' to "/",
+        'j' to "\\",
+        'k' to "*",
+        'l' to "?",
+        'z' to "+",
+        'x' to "-",
+        'c' to "_",
     )
 
     override fun onCreate() {
