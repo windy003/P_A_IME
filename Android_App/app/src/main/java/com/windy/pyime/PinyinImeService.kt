@@ -1461,12 +1461,12 @@ class PinyinImeService : InputMethodService() {
 
         val r1 = newRow()
         for (n in listOf("1", "2", "3")) r1.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r1.addView(makeKey("返回", 1f) { closeSymbolView() })
+        r1.addView(makeKey("⌫", 1f) { onBackspace() })
         root.addView(r1)
 
         val r2 = newRow()
         for (n in listOf("4", "5", "6")) r2.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r2.addView(makeKey("⌫", 1f) { onBackspace() })
+        r2.addView(makeKey("返回", 1f) { closeSymbolView() })
         root.addView(r2)
 
         val r3 = newRow()
@@ -1475,7 +1475,8 @@ class PinyinImeService : InputMethodService() {
         root.addView(r3)
 
         val r4 = newRow()
-        r4.addView(makeKey("0", 2f) { onSymbolInput("0") })   // 0 横跨两列
+        r4.addView(makeKey("+", 1f) { onSymbolInput("+") })   // 0 左侧加号
+        r4.addView(makeKey("0", 1f) { onSymbolInput("0") })   // 0 占一列
         r4.addView(makeKey(".", 1f) { onSymbolInput(".") })   // 小数点
         r4.addView(makeKey("⏎", 1f) { onEnter() })
         root.addView(r4)
