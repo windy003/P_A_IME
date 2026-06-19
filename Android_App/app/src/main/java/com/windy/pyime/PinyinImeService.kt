@@ -634,6 +634,15 @@ class PinyinImeService : InputMethodService() {
     }
 
     private fun onShift() {
+        if (cnMode) {
+            // 中文模式下按大小写键:先把未完成拼音上屏,自动切到英文模式并进入单次大写
+            if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
+            cnMode = false
+            modeKey?.text = "EN"
+            shiftState = SHIFT_ONCE
+            updateLetterCaps()
+            return
+        }
         shiftState = (shiftState + 1) % 3   // 关 → 单次 → 锁定 → 关
         updateLetterCaps()
     }
