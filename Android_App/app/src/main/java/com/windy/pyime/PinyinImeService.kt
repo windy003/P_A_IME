@@ -133,6 +133,8 @@ class PinyinImeService : InputMethodService() {
         'q' to "'",
         'w' to "\"",
         'e' to ":",
+        'i' to "+",
+        'y' to "*",
         'r' to "/",
         't' to "\\",
         'u' to "?",

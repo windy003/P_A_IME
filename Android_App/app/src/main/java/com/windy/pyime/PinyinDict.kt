@@ -23,6 +23,9 @@ class PinyinDict(raw: String) {
     // 末字简拼索引:(前缀全拼, 末尾声母串) -> 候选(共享 table 的实例)。
     // 如 设计 she ji -> ("she","j");计算机 ji suan ji -> ("ji suan","j")、("ji","sj")
     private val partAbbr = HashMap<Pair<String, String>, MutableList<WordWeight>>()
+    // 单字母索引:拼音首字母 -> 候选(共享 table 的实例)。
+    // 用 py[0] 归桶,所以 lao shi=老师 也归在 'l' 下,zh/ch/sh 归在 z/c/s 下。
+    private val initialIdx = HashMap<Char, MutableList<WordWeight>>()
     private var maxsyl = 1
     private val initSubs = ArrayList<Pair<String, String>>()         // 声母替换对
 
@@ -75,6 +78,18 @@ class PinyinDict(raw: String) {
             for (v in abbr.values) {
                 v.sortByDescending { it.weight }
                 if (v.size > MAX_SHOUPIN_PER_KEY) v.subList(MAX_SHOUPIN_PER_KEY, v.size).clear()
+            }
+        }
+
+        // ---- 单字母索引:拼音首字母 -> 候选,按权重降序(不截断,全部保留)----
+        if (ENABLE_SINGLE_INITIAL) {
+            for ((py, words) in table) {
+                val c = py[0]
+                if (c in ABBR_LETTERS) initialIdx.getOrPut(c) { ArrayList() }.addAll(words)   // 共享 WordWeight 实例
+            }
+            for (v in initialIdx.values) {
+                v.sortByDescending { it.weight }
+                if (v.size > MAX_SINGLE_INITIAL_PER_KEY) v.subList(MAX_SINGLE_INITIAL_PER_KEY, v.size).clear()
             }
         }
 
@@ -147,6 +162,15 @@ class PinyinDict(raw: String) {
         val seen = HashSet<String>()
         fun add(word: String, nseg: Int, weight: Int) {
             if (word !in seen && out.size < MAX_CANDS) { seen.add(word); out.add(Triple(word, nseg, weight)) }
+        }
+
+        // 单字母:只打一个字母时,列出所有该拼音首字母开头的词,纯按权重(initialIdx 已排好序)
+        val letters0 = buf.replace("'", "")
+        if (letters0.length == 1) {
+            initialIdx[letters0[0]]?.let { lst ->
+                for (ww in lst) add(ww.word, segs.size, ww.weight)
+                return Pair(out.map { Candidate(it.first, it.second) }, segs)
+            }
         }
 
         for (n in segs.size downTo 1) {
@@ -236,9 +260,16 @@ class PinyinDict(raw: String) {
         }
         val t = target ?: return null
         val p = pool ?: return null
-        val mx = p.maxOf { it.weight }
+        // 比较池并入「简拼桶」:与 PC 版一致。否则用全拼选词只把词提到同音词里第一,
+        // 进不了简拼(如 zb)的竞争;并入后,选一次「在不」就能让它在 zb 里也排第一。
+        val cmpPool = ArrayList<WordWeight>(p)
+        val syllsT = t.split(" ")
+        if (syllsT.size >= 2) {
+            abbr[syllsT.joinToString("") { it[0].toString() }]?.let { cmpPool.addAll(it) }
+        }
+        val mx = cmpPool.maxOf { it.weight }
         val cur = table[t]!!.first { it.word == word }.weight
-        if (cur == mx && p.count { it.weight == mx } == 1) return null   // 已是唯一最高
+        if (cur == mx && cmpPool.count { it.weight == mx } == 1) return null   // 已是唯一最高
         val new = mx + 1
         setWeight(t, word, new)
         return t to new
@@ -248,6 +279,7 @@ class PinyinDict(raw: String) {
         val lst = table[key] ?: return
         lst.firstOrNull { it.word == word }?.weight = weight   // 共享实例,abbr 同步更新
         lst.sortByDescending { it.weight }
+        initialIdx[key[0]]?.sortByDescending { it.weight }     // 单字母索引(按拼音首字母归桶)
         val sylls = key.split(" ")
         if (sylls.size >= 2) {
             abbr[sylls.joinToString("") { it[0].toString() }]?.sortByDescending { it.weight }   // 简拼桶
@@ -265,6 +297,8 @@ class PinyinDict(raw: String) {
         const val MAX_FUZZY_KEYS = 24
         const val ENABLE_SHOUPIN = true
         const val MAX_SHOUPIN_PER_KEY = 80
+        const val ENABLE_SINGLE_INITIAL = true            // 单字母:打一个字母即列出该拼音首字母开头的词,按词频
+        const val MAX_SINGLE_INITIAL_PER_KEY = Int.MAX_VALUE  // 每个首字母保留多少候选(不限制,全部保留)
         const val ENABLE_TAIL_INITIAL = true     // 末字简拼:前面音节全拼、末尾若干字只打声母,如 sej->设计、jisuanj->计算机
         const val MAX_TAIL_INITIAL_PER_KEY = 80  // 每个「前缀+末声母」键保留多少候选(按词频)
 
