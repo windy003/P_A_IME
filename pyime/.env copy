@@ -1,0 +1,4 @@
+# 拼音词库文件路径
+# 可填相对路径(相对于 pyime 目录)或绝对路径
+# 注意:Windows 路径不要加引号,否则反斜杠会被当作转义符(如 \f 会变成换页符)
+DICT_FILE=D:\files\using\Data\D_IME_Yaml\pinyin_simp.dict.yaml
