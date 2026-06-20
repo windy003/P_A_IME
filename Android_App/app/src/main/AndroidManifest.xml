@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 读写外部存储根目录的 pinyin_simp.dict.yaml。Android 11+ 用 MANAGE_EXTERNAL_STORAGE -->
+    <!-- 读写 1/IME_Yaml/D_IME_Yaml/pinyin_simp.dict.yaml。Android 11+ 用 MANAGE_EXTERNAL_STORAGE -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"

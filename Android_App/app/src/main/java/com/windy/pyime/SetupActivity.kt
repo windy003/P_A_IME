@@ -22,14 +22,14 @@ import java.io.File
 
 /**
  * 引导页:启用输入法、授予「所有文件访问」权限、查看词库文件状态。
- * 不含任何同步功能;词库由用户手动放到内部存储根目录。
+ * 不含任何同步功能;授权后自动创建 1/IME_Yaml/D_IME_Yaml 目录,用户只需把词库 yaml 放进去。
  */
 class SetupActivity : Activity() {
 
     private lateinit var status: TextView
 
     private val dictFile: File
-        get() = File(Environment.getExternalStorageDirectory(), "1/pinyin_simp.dict.yaml")
+        get() = File(Environment.getExternalStorageDirectory(), "1/IME_Yaml/D_IME_Yaml/pinyin_simp.dict.yaml")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,7 +56,8 @@ class SetupActivity : Activity() {
 
         ll.addView(body(
             "词库文件位置:\n${dictFile.absolutePath}\n\n" +
-            "请用文件管理器把 pinyin_simp.dict.yaml 放到上面这个路径(内部存储根目录),然后按下面三步操作。"
+            "完成下面三步授权后,1/IME_Yaml/D_IME_Yaml 目录会自动创建;" +
+            "再用文件管理器把 pinyin_simp.dict.yaml 复制进去即可。"
         ))
 
         ll.addView(button("① 启用输入法") {
@@ -86,6 +87,7 @@ class SetupActivity : Activity() {
 
     private fun refreshStatus() {
         val hasFiles = hasAllFilesAccess()
+        if (hasFiles) ensureDictDir()   // 有权限后自动建好词库目录,用户只需把 yaml 放进去
         val f = dictFile
         val dictInfo = if (f.exists()) "已找到(${f.length() / 1024} KB)" else "未找到 ✗"
         status.text = buildString {
@@ -93,8 +95,17 @@ class SetupActivity : Activity() {
             append("· 文件权限:${if (hasFiles) "已授予 ✓" else "未授予 ✗"}\n")
             append("· 词库文件:$dictInfo\n")
             if (!hasFiles) append("\n没有文件权限,输入法将无法读取词库,请点 ③。")
-            else if (!f.exists()) append("\n词库还没放好,请把 yaml 文件复制到上面的路径。")
+            else if (!f.exists()) append("\n目录已自动创建,请把 pinyin_simp.dict.yaml 复制到上面的路径。")
             else append("\n一切就绪,可以在任意输入框使用了。")
+        }
+    }
+
+    /** 有文件权限后,自动创建词库所在目录(1/IME_Yaml/D_IME_Yaml),省得用户手动新建。 */
+    private fun ensureDictDir() {
+        try {
+            dictFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+        } catch (e: Exception) {
+            // 创建失败(如权限尚未真正生效)时忽略,状态栏会显示词库未找到
         }
     }
 

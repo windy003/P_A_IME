@@ -1,1 +1,1 @@
-start /b notepad++  "D:\files\using\Python\P_A_IME\pyime\pinyin_simp.dict.yaml"
+start /b notepad++  "D:\files\using\Data\D_IME_Yaml\pinyin_simp.dict.yaml"

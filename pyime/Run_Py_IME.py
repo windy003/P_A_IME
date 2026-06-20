@@ -8,9 +8,20 @@ import sys
 import threading
 import time
 
+from dotenv import load_dotenv
+
 # ---------------------------------------------------------------- 配置
-DICT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "pinyin_simp.dict.yaml")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 从 pyime 目录下的 .env 文件加载配置
+load_dotenv(os.path.join(_SCRIPT_DIR, ".env"))
+
+# 词库文件路径:优先取 .env 中的 DICT_FILE,缺省则用默认文件名;
+# 相对路径相对于 pyime 目录解析,绝对路径直接使用
+_dict_file = os.environ.get("DICT_FILE", "pinyin_simp.dict.yaml")
+if not os.path.isabs(_dict_file):
+    _dict_file = os.path.join(_SCRIPT_DIR, _dict_file)
+DICT_FILE = _dict_file
 PAGE_SIZE = 7   # 每页候选数
 MAX_CANDS = 10**9    # 最多取多少个候选(设为极大值=不限制,词库匹配到的词全部进入候选)
 MAX_PINYIN = 30      # 拼音缓冲区上限

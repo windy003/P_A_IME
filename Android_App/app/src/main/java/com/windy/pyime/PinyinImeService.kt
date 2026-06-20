@@ -42,12 +42,12 @@ import java.util.concurrent.Executors
 /**
  * 拼音输入法服务。自绘 QWERTY 软键盘 + 候选栏,逻辑参照 PC 版 Engine:
  * 点字母 -> 累积拼音 -> 出候选 -> 点候选/空格上屏并调权(写回词库文件)。
- * 词库固定从 /storage/emulated/0/pinyin_simp.dict.yaml 读取(用户手动放置)。
+ * 词库固定从 /storage/emulated/0/1/IME_Yaml/D_IME_Yaml/pinyin_simp.dict.yaml 读取(用户手动放置)。
  */
 class PinyinImeService : InputMethodService() {
 
     private val dictFile: File
-        get() = File(Environment.getExternalStorageDirectory(), "1/pinyin_simp.dict.yaml")
+        get() = File(Environment.getExternalStorageDirectory(), "1/IME_Yaml/D_IME_Yaml/pinyin_simp.dict.yaml")
 
     @Volatile private var dict: PinyinDict? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -152,6 +152,10 @@ class PinyinImeService : InputMethodService() {
         'z' to "+",
         'x' to "-",
         'c' to "_",
+        'v' to "~",
+        'b' to "<",
+        'n' to ">",
+        'm' to "&",
     )
 
     override fun onCreate() {
@@ -545,7 +549,7 @@ class PinyinImeService : InputMethodService() {
         shiftKey = sk
         row.addView(sk)
         for (c in ROW3) row.addView(addLetterKey(c))
-        row.addView(makeKey("⌫", 1.5f) { onBackspace() })
+        row.addView(makeBackspaceKey(1.5f))
         return row
     }
 
@@ -690,6 +694,50 @@ class PinyinImeService : InputMethodService() {
                 setMargins(dp(2), dp(3), dp(2), dp(3))
             }
             setOnClickListener { onClick() }
+        }
+    }
+
+    /** 删除键:点一下删一个;按住则连续删除(先 400ms 延迟,之后越按越快)。 */
+    private fun makeBackspaceKey(weight: Float): TextView {
+        val key = makeKey("⌫", weight) { onBackspace() }
+        attachAutoRepeat(key) { onBackspace() }
+        return key
+    }
+
+    /**
+     * 给按键附加「按住连续触发」:按下立即触发一次,持续按住后反复触发(间隔逐步缩短),
+     * 松手或手指移出按键即停止。返回 true 消费触摸事件,故不会再触发 onClick。
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachAutoRepeat(view: View, action: () -> Unit) {
+        var interval = 80L
+        val repeat = object : Runnable {
+            override fun run() {
+                action()
+                interval = (interval - 8L).coerceAtLeast(28L)   // 逐步加速
+                mainHandler.postDelayed(this, interval)
+            }
+        }
+        view.setOnTouchListener { v, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    action()                                    // 立即删一次
+                    interval = 80L
+                    mainHandler.postDelayed(repeat, 400L)       // 按住超过 400ms 才开始连删
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    // 手指滑出按键范围则停止连删(避免误删)
+                    val inside = e.x >= 0 && e.y >= 0 && e.x <= v.width && e.y <= v.height
+                    if (!inside) mainHandler.removeCallbacks(repeat)
+                    false
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(repeat)
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -1461,7 +1509,7 @@ class PinyinImeService : InputMethodService() {
 
         val r1 = newRow()
         for (n in listOf("1", "2", "3")) r1.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r1.addView(makeKey("⌫", 1f) { onBackspace() })
+        r1.addView(makeBackspaceKey(1f))
         root.addView(r1)
 
         val r2 = newRow()
@@ -1553,7 +1601,7 @@ class PinyinImeService : InputMethodService() {
         // 功能行
         val row = newRow()
         row.addView(makeKey("清除", 1f) { clearHandwriting() })
-        row.addView(makeKey("⌫", 1f) { onBackspace() })
+        row.addView(makeBackspaceKey(1f))
         row.addView(makeKey("空格", 2f) { commitText(" ") })
         row.addView(makeKey("⏎", 1f) { onEnter() })
         row.addView(makeKey("拼音", 1.4f) { closeHandwriting() })
@@ -1913,7 +1961,7 @@ class PinyinImeService : InputMethodService() {
         val container = candidatesContainer ?: return
         container.removeAllViews()
         if (dict == null && buf.isNotEmpty()) {
-            container.addView(hintView("词库未加载:请把 pinyin_simp.dict.yaml 放到内部存储根目录并授予文件权限"))
+            container.addView(hintView("词库未加载:请把 pinyin_simp.dict.yaml 放到 1/IME_Yaml/D_IME_Yaml 目录并授予文件权限"))
         } else {
             for ((i, c) in cands.withIndex()) {
                 container.addView(candView(c.word, i))

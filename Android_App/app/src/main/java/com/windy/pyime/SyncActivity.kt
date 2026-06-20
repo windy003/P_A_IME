@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
-import android.os.Environment
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -15,7 +14,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
 
 /**
  * 同步页(账号体系版):输入法窗口里无法登录/比较,所以放在独立 Activity。
@@ -36,11 +34,6 @@ class SyncActivity : Activity() {
     private val folderNames = HashMap<String, String>() // folder_uuid -> 文件夹名(两端合并)
     private val collapsed = HashSet<String>()           // 已折叠的树节点 key(不在集合里即展开)
     private var rootContainer: LinearLayout? = null
-
-    // 词库同步:每个来源(GitHub / 我的服务器)各自暂存比较后下载到的新内容,供「下载并替换」使用
-    private class DictSource { var pendingBytes: ByteArray? = null }
-    private val githubSource = DictSource()
-    private val serverSource = DictSource()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,9 +115,6 @@ class SyncActivity : Activity() {
             layoutParams = mw()
             setOnClickListener { showRegister() }
         })
-
-        // 词库同步不依赖账号登录,登录页也提供入口
-        addDictSyncCard(box)
     }
 
     /** 登录成功:换了不同账号则先确认清空本机数据,再保存会话并进入比较。 */
@@ -282,9 +272,6 @@ class SyncActivity : Activity() {
         box.addView(Button(this).apply {
             text = "退出登录"; layoutParams = mw(); setOnClickListener { logout() }
         })
-
-        // 词库文件同步(独立于账号数据同步)
-        addDictSyncCard(box)
     }
 
     // ---------------------------------------------------------------- 树:端(第 0 级)
@@ -456,152 +443,6 @@ class SyncActivity : Activity() {
         }.start()
     }
 
-    // ---------------------------------------------------------------- 词库文件同步
-    /** 本地词库文件路径,必须与 PinyinImeService.dictFile 一致(IME 从这里读取)。 */
-    private fun dictFile() = File(Environment.getExternalStorageDirectory(), "1/pinyin_simp.dict.yaml")
-
-    /** 把用户填写的服务器地址规整成完整 URL:补 http://、默认端口 5001、补词库路径。空输入返回空串。 */
-    private fun buildServerUrl(input: String): String {
-        var s = input.trim().removePrefix("http://").removePrefix("https://").trimEnd('/')
-        if (s.isEmpty()) return ""
-        val hostPort = s.substringBefore('/')              // 去掉用户可能粘进来的路径
-        val host = if (hostPort.contains(':')) hostPort else "$hostPort:5001"
-        return "http://$host/pinyin_simp.dict.yaml"
-    }
-
-    /** 在 box 末尾加两张词库同步卡片:我的服务器 + GitHub。两者都用内容哈希判断更新。 */
-    private fun addDictSyncCard(box: LinearLayout) {
-        // —— 我的服务器 ——
-        box.addView(spacerV(dp(20)))
-        box.addView(titleText("🖥 我的服务器同步"))
-        box.addView(bodyText(
-            "从你自己的服务器(http.server)拉取词库。\n" +
-            "填局域网 IP 或 Tailscale IP(默认端口 5001),按内容哈希判断是否有更新。"
-        ))
-        val ipEdit = EditText(this).apply {
-            hint = "服务器 IP,如 192.168.2.56"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(prefs().getString(KEY_SERVER_IP, ""))   // 记住上次填的 IP
-            layoutParams = mw()
-        }
-        box.addView(ipEdit)
-        addDictSourceUI(box, serverSource, "比较(检查服务器是否有更新)") {
-            val url = buildServerUrl(ipEdit.text.toString())
-            if (url.isNotEmpty()) {
-                prefs().edit().putString(KEY_SERVER_IP, ipEdit.text.toString().trim()).apply()
-            }
-            url
-        }
-
-        // —— GitHub ——
-        box.addView(spacerV(dp(20)))
-        box.addView(titleText("📖 词库文件同步(GitHub)"))
-        box.addView(bodyText(
-            "从 GitHub 拉取最新词库 pinyin_simp.dict.yaml。\n" +
-            "点「比较」下载并按内容哈希(SHA-256)判断是否有更新;有更新时点「下载并替换」会先删除本地旧文件再写入。"
-        ))
-        addDictSourceUI(box, githubSource, "比较(检查 GitHub 是否有更新)") { DictSync.GITHUB_URL }
-    }
-
-    /**
-     * 渲染一个词库来源的「状态行 + 比较按钮 + 下载并替换按钮」。
-     * @param urlProvider 点比较时调用,返回要下载的完整 URL;返回空串表示地址无效,直接提示。
-     */
-    private fun addDictSourceUI(
-        box: LinearLayout,
-        source: DictSource,
-        compareLabel: String,
-        urlProvider: () -> String,
-    ) {
-        val status = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.parseColor("#505050"))
-            setPadding(0, dp(4), 0, dp(4))
-            text = if (source.pendingBytes != null) "有新版本,可下载替换" else "尚未比较"
-        }
-        val downloadBtn = Button(this).apply {
-            text = "下载并替换"
-            layoutParams = mw()
-            visibility = if (source.pendingBytes != null) View.VISIBLE else View.GONE
-        }
-        val compareBtn = Button(this).apply {
-            text = compareLabel
-            layoutParams = mw()
-        }
-
-        compareBtn.setOnClickListener {
-            val url = urlProvider()
-            if (url.isEmpty()) { toast("请先填写服务器地址"); return@setOnClickListener }
-            compareBtn.isEnabled = false
-            status.setTextColor(Color.parseColor("#505050"))
-            status.text = "比较中…"
-            Thread {
-                try {
-                    val f = dictFile()
-                    val localBytes = if (f.exists()) f.readBytes() else null
-                    val r = DictSync.check(url, localBytes)
-                    ui.post {
-                        compareBtn.isEnabled = true
-                        if (r.changed) {
-                            source.pendingBytes = r.bytes
-                            val kb = r.bytes.size / 1024
-                            status.setTextColor(Color.parseColor("#B05000"))
-                            status.text = if (localBytes != null)
-                                "内容不一致,有新版本(约 ${kb}KB),可下载替换"
-                            else
-                                "本地暂无词库,远端约 ${kb}KB,可下载"
-                            downloadBtn.visibility = View.VISIBLE
-                        } else {
-                            source.pendingBytes = null
-                            status.setTextColor(Color.parseColor("#1A6E1A"))
-                            status.text = "内容一致,已是最新"
-                            downloadBtn.visibility = View.GONE
-                        }
-                    }
-                } catch (e: Exception) {
-                    ui.post {
-                        compareBtn.isEnabled = true
-                        status.setTextColor(Color.parseColor("#C0392B"))
-                        status.text = "比较失败:${e.message}"
-                    }
-                }
-            }.start()
-        }
-
-        downloadBtn.setOnClickListener {
-            val bytes = source.pendingBytes ?: run { toast("请先比较"); return@setOnClickListener }
-            downloadBtn.isEnabled = false
-            status.setTextColor(Color.parseColor("#505050"))
-            status.text = "下载中…"
-            Thread {
-                try {
-                    val f = dictFile()
-                    if (f.exists()) f.delete()      // 先删本地旧文件,避免残留/重复
-                    f.parentFile?.mkdirs()
-                    f.writeBytes(bytes)
-                    val kb = bytes.size / 1024
-                    source.pendingBytes = null
-                    ui.post {
-                        downloadBtn.isEnabled = true
-                        downloadBtn.visibility = View.GONE
-                        status.setTextColor(Color.parseColor("#1A6E1A"))
-                        status.text = "已下载并替换(约 ${kb}KB)。切换/重启输入法后生效。"
-                    }
-                } catch (e: Exception) {
-                    ui.post {
-                        downloadBtn.isEnabled = true
-                        status.setTextColor(Color.parseColor("#C0392B"))
-                        status.text = "下载失败:${e.message}"
-                    }
-                }
-            }.start()
-        }
-
-        box.addView(status)
-        box.addView(compareBtn)
-        box.addView(downloadBtn)
-    }
-
     // ---------------------------------------------------------------- UI helpers
     private fun titleText(t: String) = TextView(this).apply {
         text = t; textSize = 20f; setTextColor(Color.parseColor("#202020"))
@@ -632,6 +473,5 @@ class SyncActivity : Activity() {
 
         const val KEY_SYNC_USER = "sync_user"
         const val KEY_SYNC_TOKEN = "sync_token"
-        const val KEY_SERVER_IP = "dict_server_ip"   // 「我的服务器同步」上次填的 IP
     }
 }
