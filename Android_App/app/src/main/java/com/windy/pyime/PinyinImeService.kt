@@ -1523,7 +1523,7 @@ class PinyinImeService : InputMethodService() {
         root.addView(r3)
 
         val r4 = newRow()
-        r4.addView(makeKey("+", 1f) { onSymbolInput("+") })   // 0 左侧加号
+        r4.addView(makeKey("返回", 1f) { closeSymbolView() })   // 0 左侧返回键:回到拼音键盘
         r4.addView(makeKey("0", 1f) { onSymbolInput("0") })   // 0 占一列
         r4.addView(makeKey(".", 1f) { onSymbolInput(".") })   // 小数点
         r4.addView(makeKey("⏎", 1f) { onEnter() })

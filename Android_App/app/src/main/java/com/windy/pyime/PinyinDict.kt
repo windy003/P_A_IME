@@ -267,9 +267,15 @@ class PinyinDict(raw: String) {
         if (syllsT.size >= 2) {
             abbr[syllsT.joinToString("") { it[0].toString() }]?.let { cmpPool.addAll(it) }
         }
-        val mx = cmpPool.maxOf { it.weight }
+        // 比较池并入「单字母桶」:打一个字母时候选取自 initialIdx(同拼音首字母的所有词),
+        // 但调权只在同精确拼音组里比,会出现「选了 哦(o)却排不到 欧/偶(ou)前」。
+        // 并入后,新权重高过整个单字母桶,单字母列表里也能排第一。
+        initialIdx[t[0]]?.let { cmpPool.addAll(it) }
+        // 各桶共享同一 WordWeight 实例,按实例去重,避免下面「唯一最高」判断把同一个词数成多个
+        val uniq = cmpPool.distinct()
+        val mx = uniq.maxOf { it.weight }
         val cur = table[t]!!.first { it.word == word }.weight
-        if (cur == mx && cmpPool.count { it.weight == mx } == 1) return null   // 已是唯一最高
+        if (cur == mx && uniq.count { it.weight == mx } == 1) return null   // 已是唯一最高
         val new = mx + 1
         setWeight(t, word, new)
         return t to new
