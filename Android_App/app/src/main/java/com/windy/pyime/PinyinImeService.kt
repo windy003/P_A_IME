@@ -142,19 +142,19 @@ class PinyinImeService : InputMethodService() {
         // 原顶行符号下移到下两行字母(a→! s→@ 保留)
         'a' to "!",
         's' to "@",
-        'd' to "'",
+        'd' to "~",
         'f' to "\"",
-        'g' to ":",
-        'h' to "/",
+        'g' to ">",
+        'h' to "-",
         'j' to "\\",
         'k' to "*",
         'l' to "?",
         'z' to "+",
-        'x' to "-",
+        'x' to "/",
         'c' to "_",
-        'v' to "~",
+        'v' to "'",
         'b' to "<",
-        'n' to ">",
+        'n' to ":",
         'm' to "&",
     )
 
@@ -627,6 +627,58 @@ class PinyinImeService : InputMethodService() {
         commitText(sym)
     }
 
+    /**
+     * 带上滑符号的功能键:点击执行 [onTap],向上滑动输入 [hint] 符号,右上角显示小提示。
+     * 与字母键的上滑行为一致,但点击动作可自定义(如 . 键点击出句号、上滑出 ?)。
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeSwipeKey(text: String, hint: String, weight: Float, onTap: () -> Unit): View {
+        val label = TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 18f
+            setTextColor(colText())
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        val container = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                setColor(colSurface())
+                cornerRadius = dp(6).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, dp(rowHeightDp), weight).apply {
+                setMargins(dp(2), dp(3), dp(2), dp(3))
+            }
+            addView(label)
+            addView(TextView(this@PinyinImeService).apply {
+                this.text = hint
+                textSize = 10f
+                setTextColor(Color.parseColor("#9AA0A6"))
+                gravity = Gravity.TOP or Gravity.END
+                setPadding(0, dp(2), dp(4), 0)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            })
+        }
+        var startY = 0f
+        var startX = 0f
+        container.setOnTouchListener { _, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> { startY = e.rawY; startX = e.rawX; true }
+                MotionEvent.ACTION_UP -> {
+                    val up = startY - e.rawY              // 向上滑动距离
+                    val dx = Math.abs(e.rawX - startX)
+                    if (up > dp(20) && up > dx) onSwipeSymbol(hint) else onTap()
+                    true
+                }
+                else -> false
+            }
+        }
+        return container
+    }
+
     /** 字母键应显示的字符:键面恒大写(中文模式拼音仍按小写输入,
      *  英文模式实际大小写由 Shift 状态另行决定,见 appendLetter)。 */
     private fun displayChar(c: Char): Char = c.uppercaseChar()
@@ -665,7 +717,7 @@ class PinyinImeService : InputMethodService() {
         row.addView(modeKey)
         row.addView(makeKey(",", 1f) { onPunct("，", ",") })
         row.addView(makeKey("空格", 3f) { onSpace() })
-        row.addView(makeKey(".", 1f) { onPunct("。", ".") })
+        row.addView(makeSwipeKey(".", "?", 1f) { onPunct("。", ".") })   // 点击出句号,上滑出 ?
         row.addView(makeKey("⏎", 1.6f) { onEnter() })
         return row
     }
