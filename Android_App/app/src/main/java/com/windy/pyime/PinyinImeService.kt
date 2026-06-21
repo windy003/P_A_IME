@@ -64,6 +64,7 @@ class PinyinImeService : InputMethodService() {
     private var candidatesScroll: HorizontalScrollView? = null
     private var candidatesContainer: LinearLayout? = null
     private var toolbarRow: LinearLayout? = null   // 常驻工具条容器(顶栏 + 展开面板)
+    private var keyboardKeysGroup: LinearLayout? = null // 字母/功能键位区(工具条展开时隐藏,腾出空间)
     private var toolbarTopRow: LinearLayout? = null     // 顶部一行:展开按钮 + 前若干个按钮
     private var toolbarExtraPanel: LinearLayout? = null // 展开面板:其余按钮 / 排序编辑
     private var toolbarExpanded = false                 // 展开面板是否打开
@@ -297,11 +298,18 @@ class PinyinImeService : InputMethodService() {
         toolbarRow = buildToolbar()
         root.addView(toolbarRow)
 
-        // 键盘:三行字母 + 功能行
-        root.addView(letterRow(ROW1))
-        root.addView(letterRow(ROW2, sideSpacer = 0.5f))
-        root.addView(row3())
-        root.addView(functionRow())
+        // 键盘:三行字母 + 功能行(整体装进一个容器,工具条展开排序面板时隐藏,避免输入法过高)
+        keyboardKeysGroup = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(letterRow(ROW1))
+            addView(letterRow(ROW2, sideSpacer = 0.5f))
+            addView(row3())
+            addView(functionRow())
+        }
+        root.addView(keyboardKeysGroup)
 
         updatePreview()
         return root
@@ -313,14 +321,16 @@ class PinyinImeService : InputMethodService() {
     /** 全部可用的工具按钮(顺序仅作为首次使用时的默认排序)。 */
     private val toolDefs = listOf(
         ToolDef("menu", "☰", "展开菜单"),
-        ToolDef("clip", "剪", "剪贴板"),
-        ToolDef("phrase", "常", "常用语"),
+        ToolDef("clip", "📋", "剪贴板"),
+        ToolDef("phrase", "📌", "常用语"),
         ToolDef("paste", "⎘", "粘贴最近"),
         ToolDef("cursor", "✥", "光标"),
         ToolDef("hide", "⌄", "收起键盘"),
         ToolDef("handwriting", "✍", "手写"),
         ToolDef("sync", "☁", "同步"),
-        ToolDef("selectall", "全", "全选文字"),
+        ToolDef("selectall", "🆎", "全选文字"),
+        ToolDef("copy", "📄", "复制"),
+        ToolDef("clear", "❌", "清除"),
     )
 
     /** 执行某个工具按钮的动作。 */
@@ -335,6 +345,8 @@ class PinyinImeService : InputMethodService() {
             "handwriting" -> openHandwriting()
             "sync" -> openSync()
             "selectall" -> onSelectAll()
+            "copy" -> onClipAction(android.R.id.copy)
+            "clear" -> onClear()
         }
     }
 
@@ -399,6 +411,8 @@ class PinyinImeService : InputMethodService() {
     /** 根据当前顺序与展开/编辑状态重建整个工具条。 */
     private fun renderToolbar() {
         renderToolbarTop()
+        // 展开面板时隐藏下方键位区,腾出空间;收起时恢复。
+        keyboardKeysGroup?.visibility = if (toolbarExpanded) View.GONE else View.VISIBLE
         val extra = toolbarExtraPanel ?: return
         extra.removeAllViews()
         extra.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
@@ -417,11 +431,11 @@ class PinyinImeService : InputMethodService() {
             else toolbarButton(toolIcon(id)) { if (toolbarExpanded) collapseToolbar(); runToolAction(id) }
         )
         while (items.size < TOOLBAR_COLS * TOOLBAR_ROWS) items.add(toolbarSpacerCell())
-        // 列优先映射(从右往左):列表第 0、1 项 → 最右列(下、上),第 2、3 项 → 右二列(下、上)……
+        // 行优先映射(从右往左):列表前 TOOLBAR_COLS 项 → 上行(右→左),其余 → 下行(右→左)
         val grid = Array(TOOLBAR_ROWS) { arrayOfNulls<View>(TOOLBAR_COLS) }
         items.forEachIndexed { i, v ->
-            val col = TOOLBAR_COLS - 1 - (i / TOOLBAR_ROWS)
-            val row = TOOLBAR_ROWS - 1 - (i % TOOLBAR_ROWS)   // 每列先填底行,再填上行
+            val row = i / TOOLBAR_COLS                       // 先填满上行,再填下行
+            val col = TOOLBAR_COLS - 1 - (i % TOOLBAR_COLS)  // 每行从右往左
             grid[row][col] = v
         }
         for (r in 0 until TOOLBAR_ROWS) {
@@ -439,8 +453,8 @@ class PinyinImeService : InputMethodService() {
 
     /** 顶栏网格里用来占位、保持列对齐的空格子。 */
     private fun toolbarSpacerCell(): View = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f).apply {
-            setMargins(dp(6), dp(6), dp(6), dp(6))
+        layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+            setMargins(dp(3), dp(3), dp(3), dp(3))
         }
     }
 
@@ -484,8 +498,16 @@ class PinyinImeService : InputMethodService() {
         extra.addView(opRow)
 
         val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        extra.addView(listContainer)
-        // 网格已倒序填充(右下角起),故列表正序即为「底行右→左、再上行右→左」
+        // 列表可能比键盘高,放进固定高度的 ScrollView 以便上滑查看底部按钮。
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(listContainer)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(rowHeightDp * 4)
+            )
+        }
+        extra.addView(scroll)
+        // 网格按行优先从右往左填充,故列表正序即为「上行右→左、再下行右→左」
         for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
     }
 
@@ -559,8 +581,9 @@ class PinyinImeService : InputMethodService() {
                 cornerRadius = dp(6).toFloat()
             }
             isClickable = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f).apply {
-                setMargins(dp(6), dp(6), dp(6), dp(6))
+            setPadding(dp(2), dp(2), dp(2), dp(2))   // 内间距:更紧凑
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                setMargins(dp(3), dp(3), dp(3), dp(3))   // 外间距:按钮间隙更小
             }
             setOnClickListener { onClick() }
         }
