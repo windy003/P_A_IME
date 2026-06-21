@@ -1,0 +1,1 @@
+del  "D:\files\using\Data\D_IME_Yaml\pinyin_simp.dict.yaml"
