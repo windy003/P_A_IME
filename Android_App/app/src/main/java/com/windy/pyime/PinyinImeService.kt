@@ -315,7 +315,7 @@ class PinyinImeService : InputMethodService() {
         ToolDef("menu", "☰", "展开菜单"),
         ToolDef("clip", "剪", "剪贴板"),
         ToolDef("phrase", "常", "常用语"),
-        ToolDef("paste", "粘", "粘贴最近"),
+        ToolDef("paste", "⎘", "粘贴最近"),
         ToolDef("cursor", "✥", "光标"),
         ToolDef("hide", "⌄", "收起键盘"),
         ToolDef("handwriting", "✍", "手写"),
