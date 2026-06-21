@@ -312,18 +312,21 @@ class PinyinImeService : InputMethodService() {
 
     /** 全部可用的工具按钮(顺序仅作为首次使用时的默认排序)。 */
     private val toolDefs = listOf(
-        ToolDef("clip", "📋", "剪贴板"),
-        ToolDef("phrase", "📝", "常用语"),
-        ToolDef("paste", "⎘", "粘贴最近"),
+        ToolDef("menu", "☰", "展开菜单"),
+        ToolDef("clip", "剪", "剪贴板"),
+        ToolDef("phrase", "常", "常用语"),
+        ToolDef("paste", "粘", "粘贴最近"),
         ToolDef("cursor", "✥", "光标"),
         ToolDef("hide", "⌄", "收起键盘"),
         ToolDef("handwriting", "✍", "手写"),
         ToolDef("sync", "☁", "同步"),
+        ToolDef("selectall", "全", "全选文字"),
     )
 
     /** 执行某个工具按钮的动作。 */
     private fun runToolAction(id: String) {
         when (id) {
+            "menu" -> toggleToolbarExpanded()
             "clip" -> { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() }
             "phrase" -> { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() }
             "paste" -> pasteRecentClip()
@@ -331,6 +334,7 @@ class PinyinImeService : InputMethodService() {
             "hide" -> onHide()
             "handwriting" -> openHandwriting()
             "sync" -> openSync()
+            "selectall" -> onSelectAll()
         }
     }
 
@@ -373,10 +377,9 @@ class PinyinImeService : InputMethodService() {
             )
         }
         toolbarTopRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL   // 2×6 网格:内部放 TOOLBAR_ROWS 行
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(82)   // = 预览32 + 候选50,保证不跳动
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
         toolbarExtraPanel = LinearLayout(this).apply {
@@ -403,15 +406,42 @@ class PinyinImeService : InputMethodService() {
         if (toolbarEditing) renderToolbarEditList(extra) else renderToolbarExtra(extra)
     }
 
-    /** 只刷新顶栏(展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
+    /** 只刷新顶栏(2×6 网格:首格展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
     private fun renderToolbarTop() {
         val top = toolbarTopRow ?: return
         top.removeAllViews()
-        top.addView(toolbarButton(if (toolbarExpanded) "▲" else "☰") { toggleToolbarExpanded() })
-        // 顶栏从右到左对应排序列表第 1、2…个:下拉按钮居最左,动作按钮反序排列
-        for (id in toolOrder.take(TOOL_TOP_COUNT).reversed()) top.addView(toolbarButton(toolIcon(id)) {
-            if (toolbarExpanded) collapseToolbar(); runToolAction(id)
-        })
+        // 先按 toolOrder 顺序建好按钮(menu 也参与),不足补空格。
+        val items = mutableListOf<View>()
+        for (id in toolOrder.take(TOOL_TOP_COUNT)) items.add(
+            if (id == "menu") toolbarButton(if (toolbarExpanded) "▲" else "☰") { toggleToolbarExpanded() }
+            else toolbarButton(toolIcon(id)) { if (toolbarExpanded) collapseToolbar(); runToolAction(id) }
+        )
+        while (items.size < TOOLBAR_COLS * TOOLBAR_ROWS) items.add(toolbarSpacerCell())
+        // 列优先映射(从右往左):列表第 0、1 项 → 最右列(下、上),第 2、3 项 → 右二列(下、上)……
+        val grid = Array(TOOLBAR_ROWS) { arrayOfNulls<View>(TOOLBAR_COLS) }
+        items.forEachIndexed { i, v ->
+            val col = TOOLBAR_COLS - 1 - (i / TOOLBAR_ROWS)
+            val row = TOOLBAR_ROWS - 1 - (i % TOOLBAR_ROWS)   // 每列先填底行,再填上行
+            grid[row][col] = v
+        }
+        for (r in 0 until TOOLBAR_ROWS) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            for (c in 0 until TOOLBAR_COLS) row.addView(grid[r][c]!!)
+            top.addView(row)
+        }
+    }
+
+    /** 顶栏网格里用来占位、保持列对齐的空格子。 */
+    private fun toolbarSpacerCell(): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+            setMargins(dp(6), dp(6), dp(6), dp(6))
+        }
     }
 
     /** 展开面板(非编辑):编辑入口 + 其余按钮。 */
@@ -455,6 +485,7 @@ class PinyinImeService : InputMethodService() {
 
         val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         extra.addView(listContainer)
+        // 网格已倒序填充(右下角起),故列表正序即为「底行右→左、再上行右→左」
         for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
     }
 
@@ -2078,7 +2109,9 @@ class PinyinImeService : InputMethodService() {
         const val PREFS = "pyime"
         const val KEY_ROW_HEIGHT = "row_height_dp"
         const val KEY_TOOL_ORDER = "toolbar_order"   // 工具按钮顺序(逗号分隔的 id)
-        const val TOOL_TOP_COUNT = 5                  // 顶栏工具按钮个数(+下拉按钮共 6 个),其余进展开面板
+        const val TOOLBAR_COLS = 6                    // 顶栏网格列数
+        const val TOOLBAR_ROWS = 2                    // 顶栏网格行数(2×6 共 12 格)
+        const val TOOL_TOP_COUNT = TOOLBAR_COLS * TOOLBAR_ROWS  // 顶栏网格可放的按钮数(含展开按钮),其余进展开面板
         const val DEFAULT_ROW_HEIGHT = 46
         const val MIN_ROW_HEIGHT = 36
         const val MAX_ROW_HEIGHT = 76
