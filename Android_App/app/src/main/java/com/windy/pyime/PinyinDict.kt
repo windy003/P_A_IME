@@ -164,11 +164,11 @@ class PinyinDict(raw: String) {
             if (word !in seen && out.size < MAX_CANDS) { seen.add(word); out.add(Triple(word, nseg, weight)) }
         }
 
-        // 单字母:只打一个字母时,列出所有该拼音首字母开头的词,纯按权重(initialIdx 已排好序)
+        // 单字母:只打一个字母时,只列出该拼音首字母开头的「单字」(过滤多字词组),纯按权重(initialIdx 已排好序)
         val letters0 = buf.replace("'", "")
         if (letters0.length == 1) {
             initialIdx[letters0[0]]?.let { lst ->
-                for (ww in lst) add(ww.word, segs.size, ww.weight)
+                for (ww in lst) if (ww.word.length == 1) add(ww.word, segs.size, ww.weight)
                 return Pair(out.map { Candidate(it.first, it.second) }, segs)
             }
         }
