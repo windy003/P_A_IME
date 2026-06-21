@@ -498,12 +498,16 @@ class PinyinImeService : InputMethodService() {
         extra.addView(opRow)
 
         val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // 列表可能比键盘高,放进固定高度的 ScrollView 以便上滑查看底部按钮。
+        // 排序列表撑满全屏高度:屏幕高减去上方已占区域(预览 32 + 顶栏 TOOLBAR_ROWS 行网格 +
+        // 编辑头部的提示与「完成」约 110),让全部按钮一屏可见、便于拖动,而非挤在下半屏的固定 4 行里。
+        val reservedTop = dp(32 + TOOLBAR_ROWS * 50 + 110)
+        val listH = (resources.displayMetrics.heightPixels - reservedTop)
+            .coerceAtLeast(dp(rowHeightDp * 4))
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             addView(listContainer)
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(rowHeightDp * 4)
+                ViewGroup.LayoutParams.MATCH_PARENT, listH
             )
         }
         extra.addView(scroll)
