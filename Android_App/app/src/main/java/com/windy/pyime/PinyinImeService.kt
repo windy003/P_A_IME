@@ -149,7 +149,7 @@ class PinyinImeService : InputMethodService() {
         'h' to "-",
         'j' to "\\",
         'k' to "*",
-        'l' to "?",
+        'l' to ";",
         'z' to "+",
         'x' to "/",
         'c' to "_",
