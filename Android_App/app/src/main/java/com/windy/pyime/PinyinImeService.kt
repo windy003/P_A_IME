@@ -904,8 +904,17 @@ class PinyinImeService : InputMethodService() {
     }
 
     private fun onBackspace() {
-        if (buf.isNotEmpty()) { buf = buf.dropLast(1); refresh() }
-        else currentInputConnection?.deleteSurroundingText(1, 0)
+        if (buf.isNotEmpty()) { buf = buf.dropLast(1); refresh(); return }
+        val ic = currentInputConnection ?: return
+        // 有选区时(如「全选」后),退格应删除整个选区;deleteSurroundingText 不会删选中文本。
+        val selected = ic.getSelectedText(0)
+        if (!selected.isNullOrEmpty()) {
+            ic.commitText("", 1)
+            selecting = false
+            updateSelectKey()
+        } else {
+            ic.deleteSurroundingText(1, 0)
+        }
     }
 
     private fun onSpace() {
