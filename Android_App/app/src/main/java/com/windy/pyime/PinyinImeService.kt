@@ -270,7 +270,7 @@ class PinyinImeService : InputMethodService() {
             setPadding(dp(12), 0, dp(12), 0)
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(32)
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(PREVIEW_HEIGHT)
             )
             visibility = View.GONE
         }
@@ -288,13 +288,13 @@ class PinyinImeService : InputMethodService() {
             isHorizontalScrollBarEnabled = false
             addView(candidatesContainer)
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(CANDIDATES_HEIGHT)
             )
             visibility = View.GONE
         }
         root.addView(candidatesScroll)
 
-        // 常驻工具条:高度 = 预览(32)+候选(50),与有输入时总高一致,切换时键盘不跳动
+        // 常驻工具条:总高 = HEADER_HEIGHT = 预览(PREVIEW_HEIGHT)+候选(CANDIDATES_HEIGHT),与有输入时总高一致,切换时键盘不跳动
         toolbarRow = buildToolbar()
         root.addView(toolbarRow)
 
@@ -453,8 +453,8 @@ class PinyinImeService : InputMethodService() {
 
     /** 顶栏网格里用来占位、保持列对齐的空格子。 */
     private fun toolbarSpacerCell(): View = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-            setMargins(dp(3), dp(3), dp(3), dp(3))
+        layoutParams = LinearLayout.LayoutParams(0, dp(TOOLBAR_BTN_HEIGHT), 1f).apply {
+            setMargins(dp(3), dp(TOOLBAR_BTN_MARGIN), dp(3), dp(TOOLBAR_BTN_MARGIN))
         }
     }
 
@@ -500,7 +500,7 @@ class PinyinImeService : InputMethodService() {
         val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // 排序列表撑满全屏高度:屏幕高减去上方已占区域(预览 32 + 顶栏 TOOLBAR_ROWS 行网格 +
         // 编辑头部的提示与「完成」约 110),让全部按钮一屏可见、便于拖动,而非挤在下半屏的固定 4 行里。
-        val reservedTop = dp(32 + TOOLBAR_ROWS * 50 + 110)
+        val reservedTop = dp(PREVIEW_HEIGHT + TOOLBAR_ROWS * TOOLBAR_ROW_HEIGHT + 110)
         val listH = (resources.displayMetrics.heightPixels - reservedTop)
             .coerceAtLeast(dp(rowHeightDp * 4))
         val scroll = ScrollView(this).apply {
@@ -586,8 +586,8 @@ class PinyinImeService : InputMethodService() {
             }
             isClickable = true
             setPadding(dp(2), dp(2), dp(2), dp(2))   // 内间距:更紧凑
-            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                setMargins(dp(3), dp(3), dp(3), dp(3))   // 外间距:按钮间隙更小
+            layoutParams = LinearLayout.LayoutParams(0, dp(TOOLBAR_BTN_HEIGHT), 1f).apply {
+                setMargins(dp(3), dp(TOOLBAR_BTN_MARGIN), dp(3), dp(TOOLBAR_BTN_MARGIN))   // 外间距:按钮间隙更小
             }
             setOnClickListener { onClick() }
         }
@@ -2148,6 +2148,14 @@ class PinyinImeService : InputMethodService() {
         const val TOOLBAR_COLS = 6                    // 顶栏网格列数
         const val TOOLBAR_ROWS = 2                    // 顶栏网格行数(2×6 共 12 格)
         const val TOOL_TOP_COUNT = TOOLBAR_COLS * TOOLBAR_ROWS  // 顶栏网格可放的按钮数(含展开按钮),其余进展开面板
+
+        // —— 顶部区域(候选区 / 工具条)统一高度,避免两者切换时键盘跳动闪屏 ——
+        const val PREVIEW_HEIGHT = 32                 // 拼音预览行高
+        const val TOOLBAR_BTN_HEIGHT = 44             // 工具条按钮高
+        const val TOOLBAR_BTN_MARGIN = 3              // 工具条按钮上下外间距
+        const val TOOLBAR_ROW_HEIGHT = TOOLBAR_BTN_HEIGHT + TOOLBAR_BTN_MARGIN * 2  // 工具条单行高 = 50
+        const val HEADER_HEIGHT = TOOLBAR_ROWS * TOOLBAR_ROW_HEIGHT                 // 工具条总高(最高者)= 100
+        const val CANDIDATES_HEIGHT = HEADER_HEIGHT - PREVIEW_HEIGHT               // 候选栏高,使预览+候选 = HEADER_HEIGHT
         const val DEFAULT_ROW_HEIGHT = 46
         const val MIN_ROW_HEIGHT = 36
         const val MAX_ROW_HEIGHT = 76
