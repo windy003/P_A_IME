@@ -90,7 +90,11 @@ class PinyinImeService : InputMethodService() {
     private var pendingReopenFolderUuid: String? = null
     private var pendingReopenTab = TAB_PHRASE   // 返回后要重开的 Tab(剪贴板/常用语)
 
-    private var symbolView: View? = null           // 数字符号页
+    private var symbolView: View? = null           // 数字符号页(九宫格)
+
+    private var symbolPickerView: View? = null     // 符号选择页(主面板里没有的符号)
+    private var symbolPickerGrid: LinearLayout? = null  // 符号网格容器(按最近使用排序)
+    private var symbolOrder: MutableList<String> = mutableListOf()  // 符号当前排序(最近使用在前)
 
     // 手写输入(Google ML Kit Digital Ink,首次需联网下载中文模型,之后离线识别)
     private var handwritingView: View? = null       // 手写面板整体
@@ -239,16 +243,19 @@ class PinyinImeService : InputMethodService() {
         val panel = buildToolPanel().apply { visibility = View.GONE }
         val cursor = buildCursorPanel().apply { visibility = View.GONE }
         val symbol = buildSymbolView().apply { visibility = View.GONE }
+        val symbolPicker = buildSymbolPicker().apply { visibility = View.GONE }
         val handwriting = buildHandwritingPanel().apply { visibility = View.GONE }
         keyboardView = kb
         panelView = panel
         cursorView = cursor
         symbolView = symbol
+        symbolPickerView = symbolPicker
         handwritingView = handwriting
         root.addView(kb)
         root.addView(panel)
         root.addView(cursor)
         root.addView(symbol)
+        root.addView(symbolPicker)
         root.addView(handwriting)
         return root
     }
@@ -321,6 +328,7 @@ class PinyinImeService : InputMethodService() {
     /** 全部可用的工具按钮(顺序仅作为首次使用时的默认排序)。 */
     private val toolDefs = listOf(
         ToolDef("menu", "☰", "展开菜单"),
+        ToolDef("symbol", "➕", "符号"),
         ToolDef("clip", "📋", "剪贴板"),
         ToolDef("phrase", "📌", "常用语"),
         ToolDef("paste", "⎘", "粘贴最近"),
@@ -337,6 +345,7 @@ class PinyinImeService : InputMethodService() {
     private fun runToolAction(id: String) {
         when (id) {
             "menu" -> toggleToolbarExpanded()
+            "symbol" -> openSymbolPicker()
             "clip" -> { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() }
             "phrase" -> { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() }
             "paste" -> pasteRecentClip()
@@ -1015,6 +1024,7 @@ class PinyinImeService : InputMethodService() {
         panelView?.visibility = View.GONE
         cursorView?.visibility = View.GONE
         symbolView?.visibility = View.GONE
+        symbolPickerView?.visibility = View.GONE
         keyboardView?.visibility = View.VISIBLE
     }
 
@@ -1668,6 +1678,96 @@ class PinyinImeService : InputMethodService() {
         keyboardView?.visibility = View.VISIBLE
     }
 
+    // ---------------------------------------------------------------- 符号选择页
+    /** 可选符号全集(主面板里没有的)。新增符号往这里加即可,首次默认排在末尾。 */
+    private val symbolCatalog = listOf("=")
+
+    /** 每行放几个符号键。 */
+    private val symbolCols = 6
+
+    /** 从设置读取符号顺序;补齐新增符号、剔除失效项(同工具按钮顺序的处理)。 */
+    private fun loadSymbolOrder() {
+        val saved = prefs().getString(KEY_SYMBOL_ORDER, null)
+            ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        val order = saved.filter { it in symbolCatalog }.toMutableList()
+        for (s in symbolCatalog) if (s !in order) order.add(s)   // 补齐新增
+        symbolOrder = order
+    }
+
+    private fun saveSymbolOrder() {
+        prefs().edit().putString(KEY_SYMBOL_ORDER, symbolOrder.joinToString(",")).apply()
+    }
+
+    private fun buildSymbolPicker(): View {
+        loadSymbolOrder()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(colPanelBg())
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        symbolPickerGrid = grid
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(grid)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(rowHeightDp * 3 + 18)
+            )
+        }
+        root.addView(scroll)
+        // 底部返回行
+        val back = newRow()
+        back.addView(makeKey("返回", 1f) { closeSymbolPicker() })
+        root.addView(back)
+        renderSymbolPicker()
+        return root
+    }
+
+    /** 按当前(最近使用在前)顺序重建符号网格。 */
+    private fun renderSymbolPicker() {
+        val grid = symbolPickerGrid ?: return
+        grid.removeAllViews()
+        var row: LinearLayout? = null
+        symbolOrder.forEachIndexed { i, sym ->
+            if (i % symbolCols == 0) {
+                row = newRow().also { grid.addView(it) }
+            }
+            row!!.addView(makeKey(sym, 1f) { onSymbolPick(sym) })
+        }
+        // 末行用空白占位补齐,保持每个符号键宽度一致
+        row?.let { r ->
+            val rem = symbolOrder.size % symbolCols
+            if (rem != 0) repeat(symbolCols - rem) { r.addView(spacer(1f)) }
+        }
+    }
+
+    /** 选中一个符号:上屏、置顶到最近、持久化并刷新顺序,然后回到键盘。 */
+    private fun onSymbolPick(sym: String) {
+        commitText(sym)
+        symbolOrder.remove(sym)
+        symbolOrder.add(0, sym)   // 置顶为最近使用
+        saveSymbolOrder()
+        renderSymbolPicker()
+        closeSymbolPicker()
+    }
+
+    private fun openSymbolPicker() {
+        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
+        keyboardView?.visibility = View.GONE
+        panelView?.visibility = View.GONE
+        cursorView?.visibility = View.GONE
+        symbolView?.visibility = View.GONE
+        renderSymbolPicker()   // 按最近使用顺序重排后再显示
+        symbolPickerView?.visibility = View.VISIBLE
+    }
+
+    private fun closeSymbolPicker() {
+        symbolPickerView?.visibility = View.GONE
+        keyboardView?.visibility = View.VISIBLE
+    }
+
     // ---------------------------------------------------------------- 手写输入
     /**
      * 手写面板:候选行 + 状态提示 + 画板 + 功能行。
@@ -2145,6 +2245,7 @@ class PinyinImeService : InputMethodService() {
         const val PREFS = "pyime"
         const val KEY_ROW_HEIGHT = "row_height_dp"
         const val KEY_TOOL_ORDER = "toolbar_order"   // 工具按钮顺序(逗号分隔的 id)
+        const val KEY_SYMBOL_ORDER = "symbol_order"  // 符号最近使用顺序(逗号分隔)
         const val TOOLBAR_COLS = 6                    // 顶栏网格列数
         const val TOOLBAR_ROWS = 2                    // 顶栏网格行数(2×6 共 12 格)
         const val TOOL_TOP_COUNT = TOOLBAR_COLS * TOOLBAR_ROWS  // 顶栏网格可放的按钮数(含展开按钮),其余进展开面板
