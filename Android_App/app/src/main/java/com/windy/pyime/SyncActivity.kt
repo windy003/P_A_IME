@@ -33,6 +33,7 @@ class SyncActivity : Activity() {
     private val diffs = ArrayList<SyncEngine.Diff>()   // 当前比较出的差异(树状面板的数据源)
     private val folderNames = HashMap<String, String>() // folder_uuid -> 文件夹名(两端合并)
     private val collapsed = HashSet<String>()           // 已折叠的树节点 key(不在集合里即展开)
+    private val expandedEntries = HashSet<String>()     // 已展开显示全文的条目 key(不在集合里即截断)
     private var rootContainer: LinearLayout? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -202,6 +203,7 @@ class SyncActivity : Activity() {
     private fun logout() {
         prefs().edit().remove(KEY_SYNC_TOKEN).apply()   // 保留用户名方便下次登录
         diffs.clear()
+        expandedEntries.clear()
         showLogin()
     }
 
@@ -329,10 +331,23 @@ class SyncActivity : Activity() {
     // ---------------------------------------------------------------- 树:条目(第 2 级)
     private fun entryNode(origin: SyncEngine.Origin, d: SyncEngine.Diff): View {
         val raw = d.winner.optString("content").replace("\n", " ")
-        val text = if (raw.length > 40) raw.take(40) + "…" else raw
-        return treeRow(2, "entry:${d.uuid}", "📄 $text", expandable = false) {
-            confirmDelete(origin, listOf(d), "条目「$text」")
-        }
+        val truncatable = raw.length > 40                 // 超过 40 字才会出现省略号
+        val key = "entry:${d.uuid}"
+        val expanded = key in expandedEntries
+        val text = if (truncatable && !expanded) raw.take(40) + "…" else raw
+        return treeRow(
+            level = 2,
+            key = key,
+            label = "📄 $text",
+            expandable = truncatable,                     // 只有会被截断的条目才显示折叠/展开箭头
+            expanded = expanded,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
+            onToggle = {
+                if (expanded) expandedEntries.remove(key) else expandedEntries.add(key)
+                renderCompare()
+            },
+            onLongDelete = { confirmDelete(origin, listOf(d), "条目「${raw.take(40)}」") },
+        )
     }
 
     /** 长按删除前的二次确认;确认后真正删除该端数据。 */
@@ -386,16 +401,18 @@ class SyncActivity : Activity() {
         key: String,
         label: String,
         expandable: Boolean,
+        expanded: Boolean = key !in collapsed,            // 箭头方向;默认走折叠集合的语义
+        maxLines: Int = 2,
+        onToggle: (() -> Unit)? = null,                   // 自定义点击切换;为空时走默认折叠集合
         onLongDelete: (() -> Unit)? = null,
     ): View {
-        val expanded = key !in collapsed
         val arrow = if (!expandable) "　" else if (expanded) "▾ " else "▸ "
         return TextView(this).apply {
             text = arrow + label
             textSize = if (level == 0) 17f else 15f
             setTextColor(if (level == 0) Color.parseColor("#1A1A1A") else Color.parseColor("#404040"))
             setPadding(dp(8 + level * 20), dp(11), dp(12), dp(11))
-            maxLines = 2
+            this.maxLines = maxLines
             layoutParams = (mw() as LinearLayout.LayoutParams).apply { topMargin = dp(3) }
             setBackgroundColor(
                 when (level) {
@@ -405,8 +422,12 @@ class SyncActivity : Activity() {
                 }
             )
             if (expandable) setOnClickListener {
-                if (key in collapsed) collapsed.remove(key) else collapsed.add(key)
-                renderCompare()
+                if (onToggle != null) {
+                    onToggle()
+                } else {
+                    if (key in collapsed) collapsed.remove(key) else collapsed.add(key)
+                    renderCompare()
+                }
             }
             if (onLongDelete != null) setOnLongClickListener {
                 onLongDelete()   // 直接进确认对话框(带「删除/取消」两个按钮)
