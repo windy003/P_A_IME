@@ -120,11 +120,39 @@ class PinyinDict(raw: String) {
         return if (s.isNotEmpty() && s[0].toString() in INITIALS_1) s[0].toString() else ""
     }
 
-    /** 把字母串贪心切分成音节列表;切不动时退化为单字母段。 */
+    /**
+     * 把字母串切分成音节列表;优先让整串都被合法音节覆盖(全局匹配),
+     * 如 kangu 切成 kan+gu(看顾)而非贪心的 kang+u(看)。无法整串覆盖时
+     * 退回贪心最长匹配、切不动的字母单独成段。
+     */
     fun segment(buf: String): List<String> {
+        val n = buf.length
+        // can[i]:buf[i..] 能否被合法音节完整覆盖(' 视为透明的音节边界)
+        val can = BooleanArray(n + 1)
+        can[n] = true
+        for (i in n - 1 downTo 0) {
+            if (buf[i] == '\'') { can[i] = can[i + 1]; continue }
+            val maxL = minOf(maxsyl, n - i)
+            for (L in 1..maxL) {
+                if (can[i + L] && buf.substring(i, i + L) in syllables) { can[i] = true; break }
+            }
+        }
         val segs = ArrayList<String>()
         var i = 0
-        val n = buf.length
+        if (can[0]) {
+            // 整串可完整切分:仍最长优先,但只选不会让剩余部分无解的音节
+            while (i < n) {
+                if (buf[i] == '\'') { i++; continue }
+                val maxL = minOf(maxsyl, n - i)
+                for (L in maxL downTo 1) {
+                    if (can[i + L] && buf.substring(i, i + L) in syllables) {
+                        segs.add(buf.substring(i, i + L)); i += L; break
+                    }
+                }
+            }
+            return segs
+        }
+        // 无法整串覆盖:退回原贪心(切不动的字母单独成段)
         while (i < n) {
             if (buf[i] == '\'') { i++; continue }
             var matched = false

@@ -600,8 +600,35 @@ class Dict:
                 del v[MAX_TAIL_INITIAL_PER_KEY:]
 
     def segment(self, buf):
-        """把字母串贪心切分成音节列表;切不动时退化为单字母段。"""
-        segs, i, n = [], 0, len(buf)
+        """把字母串切分成音节列表;优先让整串都被合法音节覆盖(全局匹配),
+        如 kangu 切成 kan+gu(看顾)而非贪心的 kang+u(看)。无法整串覆盖时
+        退回贪心最长匹配、切不动的字母单独成段。"""
+        n = len(buf)
+        # can[i]:buf[i:] 能否被合法音节完整覆盖(' 视为透明的音节边界)
+        can = [False] * (n + 1)
+        can[n] = True
+        for i in range(n - 1, -1, -1):
+            if buf[i] == "'":
+                can[i] = can[i + 1]
+                continue
+            for L in range(1, min(self.maxsyl, n - i) + 1):
+                if can[i + L] and buf[i:i + L] in self.syllables:
+                    can[i] = True
+                    break
+        segs, i = [], 0
+        if can[0]:
+            # 整串可完整切分:仍最长优先,但只选不会让剩余部分无解的音节
+            while i < n:
+                if buf[i] == "'":
+                    i += 1
+                    continue
+                for L in range(min(self.maxsyl, n - i), 0, -1):
+                    if can[i + L] and buf[i:i + L] in self.syllables:
+                        segs.append(buf[i:i + L])
+                        i += L
+                        break
+            return segs
+        # 无法整串覆盖:退回原贪心(切不动的字母单独成段)
         while i < n:
             if buf[i] == "'":
                 i += 1
