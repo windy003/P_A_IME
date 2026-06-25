@@ -54,7 +54,11 @@ class PinyinDict(raw: String) {
                 else finalSubs.add(x to y)
             }
         }
-        for (s in syllables) {
+        // 模糊音闭包:不再只保留词库里已存在的等价音节,生成出来的「虚拟音节」
+        // (如 ting→tin、ding→din)也一并纳入。这样 segment 能把 tinz 切成 tin+z,
+        // 再经模糊键 tin→ting 命中「停止」等词;否则 tin 不被识别会被切成 ti'n'z。
+        val virtual = HashSet<String>()   // 词库里不存在、仅由模糊音生成的音节
+        for (s in syllables.toList()) {
             val group = HashSet<String>().apply { add(s) }
             val todo = ArrayDeque<String>().apply { add(s) }
             while (todo.isNotEmpty()) {
@@ -62,10 +66,16 @@ class PinyinDict(raw: String) {
                 val vs = ArrayList<String>()
                 for ((x, y) in initSubs) if (initialOf(cur) == x) vs.add(y + cur.substring(x.length))
                 for ((x, y) in finalSubs) if (cur.endsWith(x)) vs.add(cur.substring(0, cur.length - x.length) + y)
-                for (v in vs) if (v in syllables && v !in group) { group.add(v); todo.add(v) }
+                for (v in vs) if (v.isNotEmpty() && v !in group) { group.add(v); todo.add(v) }
             }
-            if (group.size > 1) fuzzy[s] = (group - s).sorted()
+            // 闭包是等价类,类内每个成员(含虚拟音节)都登记一份模糊映射
+            for (member in group) {
+                if (member !in syllables) virtual.add(member)
+                if (group.size > 1) fuzzy[member] = (group - member).sorted()
+            }
         }
+        syllables.addAll(virtual)
+        if (virtual.isNotEmpty()) maxsyl = maxOf(maxsyl, virtual.maxOf { it.length })
 
         // ---- 简拼索引:每音节取首字母,按权重降序、截断 ----
         if (ENABLE_SHOUPIN) {

@@ -544,19 +544,30 @@ class Dict:
                     self.init_subs.append((x, y))
                 else:
                     final_subs.append((x, y))
+        # 模糊音闭包:不再只保留词库里已存在的等价音节,生成出来的「虚拟音节」
+        # (如 ting→tin、ding→din)也一并纳入。这样 segment 能把 tinz 切成 tin+z,
+        # 再经模糊键 tin→ting 命中「停止」等词;否则 tin 不被识别会被切成 ti'n'z。
         self.fuzzy = {}  # 音节 -> 等价音节列表(不含自身)
-        for s in self.syllables:
+        virtual = set()  # 词库里不存在、仅由模糊音生成的音节
+        for s in list(self.syllables):
             group, todo = {s}, [s]
             while todo:
                 cur = todo.pop()
                 vs = [y + cur[len(x):] for x, y in self.init_subs if _initial(cur) == x]
                 vs += [cur[:-len(x)] + y for x, y in final_subs if cur.endswith(x)]
                 for v in vs:
-                    if v in self.syllables and v not in group:
+                    if v and v not in group:
                         group.add(v)
                         todo.append(v)
-            if len(group) > 1:
-                self.fuzzy[s] = sorted(group - {s})
+            # 闭包是等价类,类内每个成员(含虚拟音节)都登记一份模糊映射
+            for member in group:
+                if member not in self.syllables:
+                    virtual.add(member)
+                if len(group) > 1:
+                    self.fuzzy[member] = sorted(group - {member})
+        self.syllables |= virtual
+        if virtual:
+            self.maxsyl = max(self.maxsyl, max(len(s) for s in virtual))
         # 简拼索引:声母串(每音节取首字母)-> [(词, 权重)],按词频降序、截断
         self.abbr = {}
         if ENABLE_SHOUPIN:
