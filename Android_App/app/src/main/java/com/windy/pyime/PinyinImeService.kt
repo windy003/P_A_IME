@@ -549,6 +549,20 @@ class PinyinImeService : InputMethodService() {
             )
         }
         extra.addView(scroll)
+        // 上面的 listH 用整屏高度估算,未扣除底部导航栏/手势条,部分机型最后一行被遮挡、
+        // 滚也滚不出(列表底部落在可见区外)。布局完成后用窗口实际可见区域(已排除系统栏)校正:
+        // 把列表底部对齐到可见区底并留 8dp 余量,各机型都能看全。
+        scroll.post {
+            val frame = android.graphics.Rect()
+            scroll.getWindowVisibleDisplayFrame(frame)
+            val loc = IntArray(2)
+            scroll.getLocationOnScreen(loc)
+            val avail = frame.bottom - loc[1] - dp(8)
+            if (avail > dp(80) && avail != scroll.height) {
+                scroll.layoutParams = scroll.layoutParams.apply { height = avail }
+                scroll.requestLayout()
+            }
+        }
         // 网格按行优先从右往左填充,故列表正序即为「上行右→左、再下行右→左」
         for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
     }
