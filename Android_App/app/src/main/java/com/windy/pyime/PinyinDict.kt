@@ -124,6 +124,9 @@ class PinyinDict(raw: String) {
         }
     }
 
+    /** 词库总词条数(各拼音键下候选数之和),刷新词库后用于给用户反馈。 */
+    val entryCount: Int get() = table.values.sumOf { it.size }
+
     /** 取音节(或不完整音节)的声母,无声母返回空串。 */
     private fun initialOf(s: String): String {
         if (s.length >= 2 && s.substring(0, 2) in INITIALS_2) return s.substring(0, 2)

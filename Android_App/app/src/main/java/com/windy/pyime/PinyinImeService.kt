@@ -339,6 +339,7 @@ class PinyinImeService : InputMethodService() {
         ToolDef("selectall", "🆎", "全选文字"),
         ToolDef("copy", "📄", "复制"),
         ToolDef("clear", "❌", "清除"),
+        ToolDef("reloaddict", "🔄", "刷新词库"),
     )
 
     /** 执行某个工具按钮的动作。 */
@@ -356,7 +357,35 @@ class PinyinImeService : InputMethodService() {
             "selectall" -> onSelectAll()
             "copy" -> onClipAction(android.R.id.copy)
             "clear" -> onClear()
+            "reloaddict" -> reloadDict()
         }
+    }
+
+    /**
+     * 刷新词库:在后台线程重新读取词库文件并重建索引,导入用户在文件里新增/修改的词条。
+     * 完成后用 Toast 反馈词条总数(或文件缺失/解析失败);若正在组词则立即用新词库刷新候选。
+     */
+    private fun reloadDict() {
+        Toast.makeText(this, "正在刷新词库…", Toast.LENGTH_SHORT).show()
+        val file = dictFile
+        Thread {
+            val d = try {
+                if (file.exists()) PinyinDict.load(file) else null
+            } catch (e: Exception) {
+                null
+            }
+            mainHandler.post {
+                if (d != null) {
+                    dict = d
+                    if (buf.isNotEmpty()) refresh() else updatePreview()
+                    Toast.makeText(this, "词库已刷新,共 ${d.entryCount} 个词条", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(
+                        this, "词库刷新失败:未找到或无法读取\n${file.absolutePath}", Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     /** 从设置读取按钮顺序;补齐新增按钮、剔除已失效的 id。 */
