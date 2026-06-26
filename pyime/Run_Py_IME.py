@@ -702,10 +702,60 @@ class Dict:
                 combos = combos[:MAX_FUZZY_KEYS]
         return combos
 
+    def _full_segs(self, letters, cap=24):
+        """枚举字母串的所有「整串音节切分」方案,按贪心偏好排序(音节数少优先、
+        靠前音节长优先;首个即与 segment 的贪心结果一致)。无法整串覆盖时返回 []。
+        用于首选切分查不到候选时,回退到另一种有候选的切分(如 yingai 的 ying ai
+        无候选时改用 yin gai)。"""
+        n = len(letters)
+        can = [False] * (n + 1)  # can[i]:letters[i:] 能否被合法音节完整覆盖
+        can[n] = True
+        for i in range(n - 1, -1, -1):
+            for L in range(1, min(self.maxsyl, n - i) + 1):
+                if can[i + L] and letters[i:i + L] in self.syllables:
+                    can[i] = True
+                    break
+        if not can[0]:
+            return []
+        results = []
+
+        def dfs(i, acc):
+            if len(results) >= cap:
+                return
+            if i == n:
+                results.append(list(acc))
+                return
+            for L in range(min(self.maxsyl, n - i), 0, -1):  # 最长优先
+                if can[i + L] and letters[i:i + L] in self.syllables:
+                    acc.append(letters[i:i + L])
+                    dfs(i + L, acc)
+                    acc.pop()
+
+        dfs(0, [])
+        results.sort(key=lambda ss: (len(ss), tuple(-len(s) for s in ss)))
+        return results
+
+    def _seg_has_cands(self, sub):
+        """该音节切分整串(精确或模糊键)是否能查到候选词。"""
+        return any(self.table.get(k) for k in self.fuzzy_keys(sub))
+
+    def _best_segment(self, buf):
+        """优先用 segment 的贪心切分;若它能整串覆盖却查不到任何候选,则在其它
+        整串切分里挑第一个有候选的(实现「组合无候选时自动换有候选的组合」)。"""
+        primary = self.segment(buf)
+        if not primary or not all(s in self.syllables for s in primary):
+            return primary  # 无切分或非整串覆盖:保持原贪心行为
+        if self._seg_has_cands(primary):
+            return primary
+        for ss in self._full_segs(buf.replace("'", "")):
+            if ss != primary and self._seg_has_cands(ss):
+                return ss
+        return primary
+
     def candidates(self, buf):
         """返回 [(候选词, 消耗的音节数)];整串匹配时精确与模糊拼音的候选合并,
         统一按权重排序(同权重精确在前),再逐级缩短;只匹配完整音节,不做前缀补全。"""
-        segs = self.segment(buf)
+        segs = self._best_segment(buf)
         if not segs:
             return [], []
         out, seen = [], set()
