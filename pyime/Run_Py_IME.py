@@ -536,6 +536,11 @@ class Dict:
         for v in self.table.values():
             v.sort(key=lambda x: -x[1])
         self.maxsyl = max(len(s) for s in self.syllables)
+        # 整词优先索引:去掉空格的拼音串 -> [拼音键,...]。用于切分时优先选
+        # 「整串恰好拼成词库里某个词」的方案,如 dange-> dan ge=单个,而非贪心的 dang e
+        self.concat = {}
+        for py in self.table:
+            self.concat.setdefault(py.replace(" ", ""), []).append(py)
         # 模糊音:声母替换对 + 每个音节的等价音节集合(闭包,只保留词库里存在的)
         self.init_subs, final_subs = [], []
         for a, b in FUZZY_PAIRS:
@@ -610,10 +615,43 @@ class Dict:
                 v.sort(key=lambda x: -x[1])
                 del v[MAX_TAIL_INITIAL_PER_KEY:]
 
+    def _table_seg(self, buf):
+        """整词优先:整串字母恰好拼成词库里某个词时,返回该词的音节切分,否则 None。
+        如 dange-> dan ge(单个)而非贪心的 dang e。多个词匹配时取音节数最少、
+        且首音节尽量长的(与贪心一致);隔音符 ' 必须落在音节边界上。"""
+        letters = buf.replace("'", "")
+        keys = self.concat.get(letters)
+        if not keys:
+            return None
+        forced, pos = set(), 0  # 隔音符在 letters 中强制要求的音节边界
+        for ch in buf:
+            if ch == "'":
+                forced.add(pos)
+            else:
+                pos += 1
+        forced -= {0, len(letters)}
+        best = None
+        for k in keys:
+            sylls = k.split(" ")
+            bounds, acc = set(), 0
+            for s in sylls[:-1]:
+                acc += len(s)
+                bounds.add(acc)
+            if not (forced <= bounds):
+                continue  # 有隔音符落在音节中间,此切分不符
+            rank = (len(sylls), tuple(-len(s) for s in sylls))
+            if best is None or rank < best[0]:
+                best = (rank, sylls)
+        return best[1] if best else None
+
     def segment(self, buf):
         """把字母串切分成音节列表;优先让整串都被合法音节覆盖(全局匹配),
         如 kangu 切成 kan+gu(看顾)而非贪心的 kang+u(看)。无法整串覆盖时
         退回贪心最长匹配、切不动的字母单独成段。"""
+        # 整词优先:整串恰好是词库里某个词时,直接用该词的切分(如 dange->单个)
+        ws = self._table_seg(buf)
+        if ws is not None:
+            return ws
         n = len(buf)
         # can[i]:buf[i:] 能否被合法音节完整覆盖(' 视为透明的音节边界)
         can = [False] * (n + 1)
@@ -678,12 +716,15 @@ class Dict:
                 out.append((word, nseg, weight))
 
         # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)。
-        # 但若该字母本身就是一个完整音节(a/e/o),视作「单拼音」,只走完整音节匹配,
+        # 只出单字:输入单个拼音字母时只给单字候选,不带出多字词/缩写
+        # (如 s 只出「是、上、说…」,不出「设计、上海」等)。
+        # 又:若该字母本身就是一个完整音节(a/e/o),视作「单拼音」,只走完整音节匹配,
         # 只出单字(如 a 出「啊/阿」),不做首字母展开(否则会带出「阿里云」等多字词)。
         letters0 = buf.replace("'", "")
         if len(letters0) == 1 and letters0 in self.initial_idx and letters0 not in self.syllables:
             for w, _wt in self.initial_idx[letters0]:
-                add(w, len(segs), _wt)
+                if len(w) == 1:
+                    add(w, len(segs), _wt)
             return [(w, n) for w, n, _ in out], segs
 
         for n in range(len(segs), 0, -1):
