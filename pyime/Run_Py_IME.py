@@ -29,7 +29,7 @@ MAX_PINYIN = 30      # 拼音缓冲区上限
 # 模糊音:每对双向等价;不想要的删掉/注释掉即可,清空列表则完全关闭
 FUZZY_PAIRS = [
     ("z", "zh"), ("c", "ch"), ("s", "sh"),    # 平翘舌
-     ("en", "eng"), ("in", "ing"), 
+     ("en", "eng"), ("in", "ing"), ("on", "ong"),   # on/ong:zon->zong、con->cong 等(zon 等本非合法拼音,自定义)
     ("l", "r"),("n", "l")            # 按需开启
 ]
 MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
@@ -677,9 +677,11 @@ class Dict:
                 seen.add(word)
                 out.append((word, nseg, weight))
 
-        # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)
+        # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)。
+        # 但若该字母本身就是一个完整音节(a/e/o),视作「单拼音」,只走完整音节匹配,
+        # 只出单字(如 a 出「啊/阿」),不做首字母展开(否则会带出「阿里云」等多字词)。
         letters0 = buf.replace("'", "")
-        if len(letters0) == 1 and letters0 in self.initial_idx:
+        if len(letters0) == 1 and letters0 in self.initial_idx and letters0 not in self.syllables:
             for w, _wt in self.initial_idx[letters0]:
                 add(w, len(segs), _wt)
             return [(w, n) for w, n, _ in out], segs
@@ -1392,8 +1394,8 @@ def selftest(dic):
     assert cands and cands[0][0] == "你好", cands[:5]
     cands, _ = dic.candidates("zhongguo")
     assert any(w == "中国" for w, _n in cands[:3]), cands[:5]
-    cands, _ = dic.candidates("zhon")       # 不完整音节不再补全
-    assert not cands, cands[:8]
+    cands, _ = dic.candidates("zhon")       # on/ong 模糊:zhon 视作虚拟音节 zhong,能出候选
+    assert cands, cands[:8]
     cands, _ = dic.candidates("shurufa")
     assert any(w == "输入法" for w, _n in cands[:5]), cands[:5]
     cands, _ = dic.candidates("women")
@@ -1407,8 +1409,8 @@ def selftest(dic):
     assert any(w == "容易" for w, _n in cands[:5]), cands[:5]
     cands, _ = dic.candidates("gaoxin")       # in/ing:高兴
     assert any(w == "高兴" for w, _n in cands[:5]), cands[:5]
-    cands, _ = dic.candidates("zon")          # 不完整音节不再补全(即使有声母模糊)
-    assert not cands, cands[:8]
+    cands, _ = dic.candidates("zon")          # on/ong 模糊:zon 视作虚拟音节 zong,能出候选
+    assert cands, cands[:8]
     cands, _ = dic.candidates("zhongguo")     # 精确匹配仍排第一
     assert cands[0][0] == "中国", cands[:5]
     # 简拼
