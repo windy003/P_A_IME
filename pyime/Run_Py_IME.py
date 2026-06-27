@@ -56,6 +56,7 @@ INPUT_KEYBOARD = 1
 MAGIC_EXTRA = 0x50594D45  # 'PYME':标记自己注入的按键,避免钩子自我循环
 
 VK_BACK, VK_RETURN, VK_SHIFT, VK_CONTROL, VK_MENU = 0x08, 0x0D, 0x10, 0x11, 0x12
+VK_CAPITAL = 0x14  # Caps Lock
 VK_ESCAPE, VK_SPACE, VK_PRIOR, VK_NEXT = 0x1B, 0x20, 0x21, 0x22
 VK_LWIN, VK_RWIN = 0x5B, 0x5C
 VK_LSHIFT, VK_RSHIFT = 0xA0, 0xA1
@@ -917,6 +918,7 @@ class Engine:
         self.dic = dic
         self.q = ui_q
         self.cn_mode = True
+        self.caps_mode = False  # 英文大写模式(Caps Lock 从中文切入):字母直接上屏大写
         self.buf = ""
         self.cands = []      # [(词, 消耗音节数)]
         self.segs = []
@@ -956,10 +958,27 @@ class Engine:
 
     def toggle(self):
         self.cn_mode = not self.cn_mode
+        self.caps_mode = False  # 普通中英切换一律退出大写模式,避免状态串台
         self.clear()
         if self.tray:  # 状态显示在系统托盘图标上(中/英),不再屏幕弹窗
             self.tray.set_mode(self.cn_mode)
         print("[PyIME] %s" % ("中文模式" if self.cn_mode else "英文模式"))
+
+    def caps_toggle(self):
+        """Caps Lock:中文(拼音)→ 英文大写模式;英文 → 切回中文模式。"""
+        if self.cn_mode:
+            if self.buf:  # 组词中按 Caps:已输入的原始字母先上屏(同 Shift 单击)
+                self.commit(self.buf.replace("'", ""))
+            self.cn_mode = False
+            self.caps_mode = True
+        else:
+            self.cn_mode = True
+            self.caps_mode = False
+        self.clear()
+        if self.tray:
+            self.tray.set_mode(self.cn_mode)
+        print("[PyIME] %s" % ("英文大写模式" if self.caps_mode
+                              else ("中文模式" if self.cn_mode else "英文模式")))
 
     # ---------- 候选选择 ----------
     def choose(self, idx):
@@ -995,12 +1014,20 @@ class Engine:
         if vk == VK_SPACE and ctrl_down():
             self.toggle()
             return True
+        if vk == VK_CAPITAL:  # 中文 ↔ 英文大写,程序自己接管,不让系统翻转 Caps 灯
+            self.caps_toggle()
+            return True
         if vk in SHIFT_KEYS:
             if not (ctrl_down() or alt_down() or win_down()):
                 self.shift_tap = True
             return False
 
         if not self.cn_mode:
+            # 英文大写模式:字母直接发送大写(Shift+字母 = 小写,模拟真实 Caps Lock)
+            if (self.caps_mode and 0x41 <= vk <= 0x5A
+                    and not (ctrl_down() or alt_down() or win_down())):
+                send_text(chr(vk) if not shift_down() else chr(vk + 32))
+                return True
             return False
         if ctrl_down() or alt_down() or win_down():
             return False  # 带修饰键的快捷键直接放行,组词不受影响(取消用 Esc)
@@ -1066,6 +1093,8 @@ class Engine:
         return pair[1] if shift_down() else pair[0]
 
     def on_key_up(self, vk):
+        if vk == VK_CAPITAL:  # keydown 已接管,抬起一并吞掉
+            return True
         if vk in SHIFT_KEYS and self.shift_tap:
             self.shift_tap = False
             if self.buf:  # 组词中单击 Shift:原始字母上屏并取消候选,同时切回英文模式
@@ -1231,12 +1260,21 @@ class TrayIcon:
         self.hicon = None
         self._proc = WNDPROC(self._wnd_proc)  # 必须保持引用防止被 GC
 
+    def _mode_text(self):
+        if self.engine.cn_mode:
+            return "中"
+        return "A" if self.engine.caps_mode else "英"
+
+    def _mode_name(self):
+        if self.engine.cn_mode:
+            return "中文"
+        return "英文大写" if self.engine.caps_mode else "英文"
+
     def _make_icon(self):
-        text = "中" if self.engine.cn_mode else "英"
-        return make_text_icon(text, _rgb(0x1e, 0x6f, 0xd9), _rgb(255, 255, 255))
+        return make_text_icon(self._mode_text(), _rgb(0x1e, 0x6f, 0xd9), _rgb(255, 255, 255))
 
     def _tip(self):
-        return "PyIME — %s(右键菜单 / 双击切换)" % ("中文" if self.engine.cn_mode else "英文")
+        return "PyIME — %s(右键菜单 / 双击切换)" % self._mode_name()
 
     def create(self):
         hinst = kernel32.GetModuleHandleW(None)
