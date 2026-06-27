@@ -773,10 +773,11 @@ class Dict:
         # 单字母:列出所有该拼音首字母开头的词,纯按权重(initial_idx 已排好序)。
         # 只出单字:输入单个拼音字母时只给单字候选,不带出多字词/缩写
         # (如 s 只出「是、上、说…」,不出「设计、上海」等)。
-        # 又:若该字母本身就是一个完整音节(a/e/o),视作「单拼音」,只走完整音节匹配,
-        # 只出单字(如 a 出「啊/阿」),不做首字母展开(否则会带出「阿里云」等多字词)。
+        # 所有字母一视同仁:即便该字母本身也是个完整音节(a/e/o 零声母,m/n 叹词),
+        # 也走首字母展开——initial_idx 已含拼音正好等于该字母的单字(如 a 含啊/阿、
+        # m 含呣),按权重排序自然靠前,不会丢;同时把同首字母其它单字一并列出。
         letters0 = buf.replace("'", "")
-        if len(letters0) == 1 and letters0 in self.initial_idx and letters0 not in self.syllables:
+        if len(letters0) == 1 and letters0 in self.initial_idx:
             for w, _wt in self.initial_idx[letters0]:
                 if len(w) == 1:
                     add(w, len(segs), _wt)
