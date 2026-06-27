@@ -558,7 +558,12 @@ class Dict:
             group, todo = {s}, [s]
             while todo:
                 cur = todo.pop()
-                vs = [y + cur[len(x):] for x, y in self.init_subs if _initial(cur) == x]
+                # len(cur) > len(x):声母之外还得有韵母才做声母替换,否则像叹词
+                # 音节 "n" 会被 n->l 替成光杆 "l"(再 l->r 成 "r"),这些非法的单字母
+                # 「虚拟音节」会污染 self.syllables,使单字母 l/r 被当成完整音节,
+                # 跳过「单字母首字母展开」,导致输入 l 出不来「了/来/里」等(只剩 唔/嗯)
+                vs = [y + cur[len(x):] for x, y in self.init_subs
+                      if _initial(cur) == x and len(cur) > len(x)]
                 vs += [cur[:-len(x)] + y for x, y in final_subs if cur.endswith(x)]
                 for v in vs:
                     if v and v not in group:
