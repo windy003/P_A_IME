@@ -192,11 +192,72 @@ class PinyinDict(raw: String) {
     }
 
     /**
+     * 枚举字母串的所有「整串音节切分」方案,按贪心偏好排序(音节数少优先、靠前音节长优先;
+     * 首个即与 segment 的贪心结果一致)。无法整串覆盖时返回空表。
+     * 用于首选切分查不到候选时,回退到另一种有候选的切分(如 cuangai 的 cuang ai
+     * 无候选时改用 cuan gai)。
+     */
+    private fun fullSegs(letters: String, cap: Int = 24): List<List<String>> {
+        val n = letters.length
+        val can = BooleanArray(n + 1)   // can[i]:letters[i..] 能否被合法音节完整覆盖
+        can[n] = true
+        for (i in n - 1 downTo 0) {
+            val maxL = minOf(maxsyl, n - i)
+            for (L in 1..maxL) {
+                if (can[i + L] && letters.substring(i, i + L) in syllables) { can[i] = true; break }
+            }
+        }
+        if (!can[0]) return emptyList()
+        val results = ArrayList<List<String>>()
+        fun dfs(i: Int, acc: ArrayList<String>) {
+            if (results.size >= cap) return
+            if (i == n) { results.add(ArrayList(acc)); return }
+            val maxL = minOf(maxsyl, n - i)
+            for (L in maxL downTo 1) {   // 最长优先
+                if (can[i + L] && letters.substring(i, i + L) in syllables) {
+                    acc.add(letters.substring(i, i + L))
+                    dfs(i + L, acc)
+                    acc.removeAt(acc.size - 1)
+                }
+            }
+        }
+        dfs(0, ArrayList())
+        // 排序键:音节数少优先;数量相同时按各音节长度逐位比较,靠前音节长的优先
+        val cmp = Comparator<List<String>> { a, b ->
+            if (a.size != b.size) return@Comparator a.size - b.size
+            for (i in a.indices) {
+                val d = b[i].length - a[i].length
+                if (d != 0) return@Comparator d
+            }
+            0
+        }
+        return results.sortedWith(cmp)
+    }
+
+    /** 该音节切分整串(精确或模糊键)是否能查到候选词。 */
+    private fun segHasCands(sub: List<String>): Boolean =
+        fuzzyKeys(sub).any { table[it]?.isNotEmpty() == true }
+
+    /**
+     * 优先用 segment 的贪心切分;若它能整串覆盖却查不到任何候选,则在其它整串切分里
+     * 挑第一个有候选的(实现「组合无候选时自动换有候选的组合」,如 cuangai 改用 cuan gai)。
+     */
+    fun bestSegment(buf: String): List<String> {
+        val primary = segment(buf)
+        if (primary.isEmpty() || !primary.all { it in syllables }) return primary  // 无切分或非整串覆盖:保持原贪心行为
+        if (segHasCands(primary)) return primary
+        for (ss in fullSegs(buf.replace("'", ""))) {
+            if (ss != primary && segHasCands(ss)) return ss
+        }
+        return primary
+    }
+
+    /**
      * 返回 (候选列表, 分段);整串匹配时精确与模糊拼音的候选合并,统一按权重排序
      * (同权重精确在前),再逐级缩短;只匹配完整音节,不做前缀补全。最后按消耗音节数降序稳定排序。
      */
     fun candidates(buf: String): Pair<List<Candidate>, List<String>> {
-        val segs = segment(buf)
+        val segs = bestSegment(buf)
         if (segs.isEmpty()) return Pair(emptyList(), emptyList())
         // 内部三元组:词、消耗音节数、权重(权重用于同消耗数时的排序,与 Python 版一致)
         val out = ArrayList<Triple<String, Int, Int>>()
