@@ -118,6 +118,8 @@ user32.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
 user32.GetGUIThreadInfo.argtypes = (wt.DWORD, ctypes.POINTER(GUITHREADINFO))
 user32.ClientToScreen.argtypes = (wt.HWND, ctypes.POINTER(wt.POINT))
 user32.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
+user32.SetWindowPos.argtypes = (wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_int, ctypes.c_int, wt.UINT)
 
 
 def shift_down():
@@ -1445,6 +1447,8 @@ def run_ui(ui_q, hook_thread):
     SW_HIDE, SW_SHOWNOACTIVATE = 0, 4
     GWL_EXSTYLE = -20
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST = 0x08000000, 0x80, 0x08
+    HWND_TOPMOST = wt.HWND(-1)
+    SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x0001, 0x0002, 0x0010
 
     def init_hwnd(w):
         """取窗口句柄并加 WS_EX_NOACTIVATE,显示/隐藏全部走 ShowWindow,
@@ -1486,6 +1490,11 @@ def run_ui(ui_q, hook_thread):
         w.geometry("+%d+%d" % (x, y))
         w.update_idletasks()
         user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+        # 抢到置顶层最上面:只设 WS_EX_TOPMOST 样式位不够,遇到目标程序自身的置顶窗口
+        # (如设了 WindowStaysOnTopHint 的对话框)候选框会被压在下面看不见、像打不出字。
+        # 每次显示都用 SetWindowPos(HWND_TOPMOST) 重新提到置顶组最上层(不抢焦点)。
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
     pos_cache = (None, (0, 0))  # (定位代数, 落点):组词期间光标不动,每代只查一次
 
@@ -1642,7 +1651,38 @@ def watch_dict(engine):
             print("[PyIME] 词库重载失败,继续使用旧词库:%s" % e)
 
 
+def ensure_admin():
+    """若本进程未提权,则以管理员身份重新启动自身(弹 UAC)。
+
+    键盘钩子/SendInput 若要作用于以管理员身份运行的程序(如自带提权的剪贴板管理器、
+    Cursor 等),本程序必须同样提权,否则会被 Windows 的 UIPI 机制拦截——
+    普通权限进程既钩不到管理员窗口的按键,也无法把中文注入进去。
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            return  # 已是管理员,无需处理
+    except Exception:
+        return
+    try:
+        exe = sys.executable
+        if getattr(sys, "frozen", False):
+            params = subprocess.list2cmdline(sys.argv[1:])          # 打包 exe:重启自身
+        else:
+            params = subprocess.list2cmdline([os.path.abspath(__file__)] + sys.argv[1:])  # 源码:用解释器重跑本脚本
+        # "runas" 触发 UAC 提权;成功则退出当前未提权实例
+        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+        if ret > 32:
+            sys.exit(0)
+    except Exception as e:
+        print("[PyIME] 请求管理员权限失败:", e)
+
+
 def main():
+    if "--selftest" not in sys.argv:
+        ensure_admin()  # 自动提权,确保能对管理员程序组词/上屏;selftest 不需要
+
     try:  # Per-Monitor V2 DPI,坐标才能和 tkinter 对得上
         user32.SetProcessDpiAwarenessContext(ctypes.c_ssize_t(-4))
     except Exception:
