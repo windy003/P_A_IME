@@ -1667,7 +1667,7 @@ class PinyinImeService : InputMethodService() {
 
     // ---------------------------------------------------------------- 数字键盘(九宫格)
     /**
-     * 构建九宫格数字键盘:左侧 1-9 + 0 排成九宫格,右侧一列功能键(退格/返回/空格/回车)。
+     * 构建九宫格数字键盘:左侧 1-9 + 0 排成九宫格,右侧一列功能键(退格/减号/空格/回车)。
      * 此页不参与拼音组词,数字键直接上屏。
      */
     private fun buildSymbolView(): View {
@@ -1686,7 +1686,7 @@ class PinyinImeService : InputMethodService() {
 
         val r2 = newRow()
         for (n in listOf("4", "5", "6")) r2.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r2.addView(makeKey("返回", 1f) { closeSymbolView() })
+        r2.addView(makeKey("-", 1f) { onSymbolInput("-") })   // 右侧列:输入减号
         root.addView(r2)
 
         val r3 = newRow()
