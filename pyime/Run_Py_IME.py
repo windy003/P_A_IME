@@ -874,6 +874,13 @@ class Dict:
             ab = self.abbr.get("".join(s[0] for s in sylls_t))
             if ab:
                 cmp_pool += ab
+        elif len(sylls_t) == 1:
+            # 单音节键同理要并入「单字母索引」桶:该桶按拼音首字母把 a/ai/an/ang…
+            # 各键的单字全部混在一起展示(见 candidates() 的单字母展开),选词调权
+            # 只在 target 自己的键内比较是不够的,选中的词赢不过同屏其它键来的词。
+            idx = self.initial_idx.get(target[0])
+            if idx:
+                cmp_pool += idx
         mx = max(w_ for _, w_ in cmp_pool)
         cur = next(w_ for w, w_ in self.table[target] if w == word)
         if cur == mx and sum(1 for _, w_ in cmp_pool if w_ == mx) == 1:
