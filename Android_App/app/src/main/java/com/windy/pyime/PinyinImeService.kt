@@ -50,6 +50,7 @@ class PinyinImeService : InputMethodService() {
         get() = File(Environment.getExternalStorageDirectory(), "1/IME_Yaml/D_IME_Yaml/pinyin_simp.dict.yaml")
 
     @Volatile private var dict: PinyinDict? = null
+    @Volatile private var dictMtime: Long = -1L    // 词库文件最后修改时间,键盘弹出时用于判断是否需要重新读取
     private val mainHandler = Handler(Looper.getMainLooper())
     private val writeExec = Executors.newSingleThreadExecutor()
 
@@ -166,13 +167,21 @@ class PinyinImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         dataStore = DataStore(this)
-        loadDictAsync()
+        reloadDictIfChanged()
     }
 
-    private fun loadDictAsync() {
+    /**
+     * 若词库文件的修改时间与上次加载时不同,则在后台线程重新读取并重建索引。
+     * 键盘每次弹出时都会调用,用户在文件里增删词条后无需手动刷新。
+     */
+    private fun reloadDictIfChanged() {
         Thread {
+            val f = dictFile
+            val mtime = if (f.exists()) f.lastModified() else -1L
+            if (mtime == dictMtime) return@Thread
+            dictMtime = mtime
             val d = try {
-                if (dictFile.exists()) PinyinDict.load(dictFile) else null
+                if (f.exists()) PinyinDict.load(f) else null
             } catch (e: Exception) {
                 null
             }
@@ -190,6 +199,7 @@ class PinyinImeService : InputMethodService() {
     /** 键盘唤起时:若设置页改过高度则重建键盘;复位到键盘视图;采集系统剪贴板。 */
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        reloadDictIfChanged()
         if (prefs().getInt(KEY_ROW_HEIGHT, DEFAULT_ROW_HEIGHT) != rowHeightDp
             || isNight() != builtNight) {   // 高度改过 或 系统夜间模式切换过 -> 重建
             setInputView(buildInputView())
@@ -339,7 +349,6 @@ class PinyinImeService : InputMethodService() {
         ToolDef("selectall", "🆎", "全选文字"),
         ToolDef("copy", "📄", "复制"),
         ToolDef("clear", "❌", "清除"),
-        ToolDef("reloaddict", "🔄", "刷新词库"),
     )
 
     /** 执行某个工具按钮的动作。 */
@@ -357,35 +366,7 @@ class PinyinImeService : InputMethodService() {
             "selectall" -> onSelectAll()
             "copy" -> onClipAction(android.R.id.copy)
             "clear" -> onClear()
-            "reloaddict" -> reloadDict()
         }
-    }
-
-    /**
-     * 刷新词库:在后台线程重新读取词库文件并重建索引,导入用户在文件里新增/修改的词条。
-     * 完成后用 Toast 反馈词条总数(或文件缺失/解析失败);若正在组词则立即用新词库刷新候选。
-     */
-    private fun reloadDict() {
-        Toast.makeText(this, "正在刷新词库…", Toast.LENGTH_SHORT).show()
-        val file = dictFile
-        Thread {
-            val d = try {
-                if (file.exists()) PinyinDict.load(file) else null
-            } catch (e: Exception) {
-                null
-            }
-            mainHandler.post {
-                if (d != null) {
-                    dict = d
-                    if (buf.isNotEmpty()) refresh() else updatePreview()
-                    Toast.makeText(this, "词库已刷新,共 ${d.entryCount} 个词条", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(
-                        this, "词库刷新失败:未找到或无法读取\n${file.absolutePath}", Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }.start()
     }
 
     /** 从设置读取按钮顺序;补齐新增按钮、剔除已失效的 id。 */
