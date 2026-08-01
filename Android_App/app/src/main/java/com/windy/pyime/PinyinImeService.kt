@@ -822,22 +822,35 @@ class PinyinImeService : InputMethodService() {
         layoutParams = LinearLayout.LayoutParams(0, dp(rowHeightDp), weight)
     }
 
-    private fun makeKey(text: String, weight: Float, onClick: () -> Unit): TextView {
+    private fun makeKey(
+        text: String, weight: Float, heightDp: Int = rowHeightDp, textSizeSp: Float = 18f, onClick: () -> Unit
+    ): TextView {
         return TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER
-            textSize = 18f
+            textSize = textSizeSp
             setTextColor(colText())
             background = GradientDrawable().apply {
                 setColor(colSurface())
                 cornerRadius = dp(6).toFloat()
             }
             isClickable = true
-            layoutParams = LinearLayout.LayoutParams(0, dp(rowHeightDp), weight).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(heightDp), weight).apply {
                 setMargins(dp(2), dp(3), dp(2), dp(3))
             }
             setOnClickListener { onClick() }
         }
+    }
+
+    /**
+     * 光标面板的行高:面板有 6 行,比主键盘(顶栏 2 行 + 键位 4 行,共 6 行单位,
+     * 但顶栏行高固定为 TOOLBAR_ROW_HEIGHT)矮一些,按主面板总高度平均到 6 行反推,
+     * 保证光标面板整体高度不超过主面板,而不是固定写死一个值。
+     */
+    private fun cursorRowHeightDp(): Int {
+        val mainTotalDp = HEADER_HEIGHT + 4 * (rowHeightDp + 6)   // 顶栏总高 + 4 行键位(含上下margin各3dp)
+        val perRow = mainTotalDp / 6 - 6
+        return perRow.coerceIn(MIN_ROW_HEIGHT, rowHeightDp)
     }
 
     /** 删除键:点一下删一个;按住则连续删除(先 400ms 延迟,之后越按越快)。 */
@@ -2030,34 +2043,52 @@ class PinyinImeService : InputMethodService() {
             )
         }
 
+        // 面板有 6 行,比主键盘键位区(4 行)多,用更矮的行高 + 更小的字号,
+        // 使面板总高度不超过主面板,而不是加宽输入法窗口。
+        val h = cursorRowHeightDp()
+        val ts = (18f * h / rowHeightDp).coerceAtLeast(11f)
+        fun key(text: String, weight: Float, onClick: () -> Unit) = makeKey(text, weight, h, ts, onClick)
+
         // 第一行:左上角 全选 / ↑ / 右上角 清除
         val row1 = newRow()
-        row1.addView(makeKey("全选", 1f) { onSelectAll() })
-        row1.addView(makeKey("↑", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_UP) })
-        row1.addView(makeKey("清除", 1f) { onClear() })
+        row1.addView(key("全选", 1f) { onSelectAll() })
+        row1.addView(key("↑", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_UP) })
+        row1.addView(key("清除", 1f) { onClear() })
         panel.addView(row1)
 
         // 第二行:← / 选择 / →
         val row2 = newRow()
-        row2.addView(makeKey("←", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_LEFT) })
-        val sk = makeKey("选择", 1f) { toggleSelecting() }
+        row2.addView(key("←", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_LEFT) })
+        val sk = key("选择", 1f) { toggleSelecting() }
         selectKey = sk
         row2.addView(sk)
-        row2.addView(makeKey("→", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_RIGHT) })
+        row2.addView(key("→", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_RIGHT) })
         panel.addView(row2)
 
         // 第三行:左下角 复制 / ↓ / 右下角 剪切
         val row3 = newRow()
-        row3.addView(makeKey("复制", 1f) { onClipAction(android.R.id.copy) })
-        row3.addView(makeKey("↓", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_DOWN) })
-        row3.addView(makeKey("剪切", 1f) { onClipAction(android.R.id.cut) })
+        row3.addView(key("复制", 1f) { onClipAction(android.R.id.copy) })
+        row3.addView(key("↓", 1f) { moveCursor(KeyEvent.KEYCODE_DPAD_DOWN) })
+        row3.addView(key("剪切", 1f) { onClipAction(android.R.id.cut) })
         panel.addView(row3)
 
-        // 最底一行:粘贴 / 返回键盘
+        // 第四行:|← / →|(选择模式下从光标扩展选区到本行行首/行末,类似 Home/End)
         val row4 = newRow()
-        row4.addView(makeKey("粘贴", 1f) { onClipAction(android.R.id.paste) })
-        row4.addView(makeKey("⌨", 1f) { closeCursorPanel() })
+        row4.addView(key("|←", 1f) { jumpToLineStart() })
+        row4.addView(key("→|", 1f) { jumpToLineEnd() })
         panel.addView(row4)
+
+        // 第五行:↑|| / ↓||(选择模式下从光标扩展选区到文本最开头/最末尾,类似 Ctrl+Home/End)
+        val row5 = newRow()
+        row5.addView(key("←||", 1f) { jumpToTop() })
+        row5.addView(key("→||", 1f) { jumpToBottom() })
+        panel.addView(row5)
+
+        // 最底一行:粘贴 / 返回键盘
+        val row6 = newRow()
+        row6.addView(key("粘贴", 1f) { onClipAction(android.R.id.paste) })
+        row6.addView(key("⌨", 1f) { closeCursorPanel() })
+        panel.addView(row6)
 
         return panel
     }
@@ -2140,6 +2171,75 @@ class PinyinImeService : InputMethodService() {
         val g = target + base
         ic.setSelection(minOf(selAnchor, g), maxOf(selAnchor, g))
         return true
+    }
+
+    /**
+     * 跳到当前行行首(类似 Home)。选择模式下以锚点为固定端扩展选区到行首,
+     * 否则直接把光标折叠到行首。
+     */
+    private fun jumpToLineStart() {
+        val ic = currentInputConnection ?: return
+        val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return
+        val text = et.text?.toString() ?: return
+        val base = et.startOffset.coerceAtLeast(0)
+        val ref = if (selecting) (if (curSelEnd != selAnchor) curSelEnd else curSelStart) else curSelStart
+        val pos = (ref - base).coerceIn(0, text.length)
+        val lineStart = text.lastIndexOf('\n', pos - 1).let { if (it < 0) 0 else it + 1 }
+        val target = lineStart + base
+        if (selecting) {
+            ic.setSelection(minOf(selAnchor, target), maxOf(selAnchor, target))
+        } else {
+            ic.setSelection(target, target)
+        }
+    }
+
+    /**
+     * 跳到当前行行末(类似 End)。选择模式下以锚点为固定端扩展选区到行末,
+     * 否则直接把光标折叠到行末。
+     */
+    private fun jumpToLineEnd() {
+        val ic = currentInputConnection ?: return
+        val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return
+        val text = et.text?.toString() ?: return
+        val base = et.startOffset.coerceAtLeast(0)
+        val ref = if (selecting) (if (curSelEnd != selAnchor) curSelEnd else curSelStart) else curSelStart
+        val pos = (ref - base).coerceIn(0, text.length)
+        val lineEnd = text.indexOf('\n', pos).let { if (it < 0) text.length else it }
+        val target = lineEnd + base
+        if (selecting) {
+            ic.setSelection(minOf(selAnchor, target), maxOf(selAnchor, target))
+        } else {
+            ic.setSelection(target, target)
+        }
+    }
+
+    /**
+     * 跳到文本开头(类似 Ctrl+Home)。选择模式下以锚点为固定端扩展选区到开头,
+     * 否则直接把光标折叠到开头。
+     */
+    private fun jumpToTop() {
+        val ic = currentInputConnection ?: return
+        if (selecting) {
+            ic.setSelection(minOf(selAnchor, 0), maxOf(selAnchor, 0))
+        } else {
+            ic.setSelection(0, 0)
+        }
+    }
+
+    /**
+     * 跳到文本末尾(类似 Ctrl+End)。选择模式下以锚点为固定端扩展选区到末尾,
+     * 否则直接把光标折叠到末尾。
+     */
+    private fun jumpToBottom() {
+        val ic = currentInputConnection ?: return
+        val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return
+        val text = et.text ?: return
+        val end = et.startOffset.coerceAtLeast(0) + text.length
+        if (selecting) {
+            ic.setSelection(minOf(selAnchor, end), maxOf(selAnchor, end))
+        } else {
+            ic.setSelection(end, end)
+        }
     }
 
     private fun toggleSelecting() {
