@@ -178,13 +178,16 @@ class PinyinImeService : InputMethodService() {
         Thread {
             val f = dictFile
             val mtime = if (f.exists()) f.lastModified() else -1L
-            if (mtime == dictMtime) return@Thread
-            dictMtime = mtime
+            // 若上次已成功加载且文件未变化,才跳过;词库未加载成功时每次都重试
+            // (清空存储/恢复出厂设置后,文件访问权限会被系统重置,首次读取可能失败,
+            // 但文件本身 mtime 不变,不能靠 mtime 相同就永久放弃重试)
+            if (mtime == dictMtime && dict != null) return@Thread
             val d = try {
                 if (f.exists()) PinyinDict.load(f) else null
             } catch (e: Exception) {
                 null
             }
+            if (d != null) dictMtime = mtime
             dict = d
             mainHandler.post {
                 updatePreview()
