@@ -144,13 +144,20 @@ class SyncEngine(private val ds: DataStore) {
             val l = local[k]; val r = remote[k]
             when {
                 l != null && r == null ->
-                    out.add(Diff(Kind.PHRASE, l.optString("uuid"), "常用语:" + l.optString("content"), "仅本地", l, Origin.LOCAL))
+                    out.add(Diff(Kind.PHRASE, l.optString("uuid"), "常用语:" + phraseLabel(l), "仅本地", l, Origin.LOCAL))
                 r != null && l == null ->
-                    out.add(Diff(Kind.PHRASE, r.optString("uuid"), "常用语:" + r.optString("content"), "仅云端", r, Origin.REMOTE))
+                    out.add(Diff(Kind.PHRASE, r.optString("uuid"), "常用语:" + phraseLabel(r), "仅云端", r, Origin.REMOTE))
                 // 两端同路径同内容 -> 一致,无差异
             }
         }
         return out
+    }
+
+    /** 常用语展示文本:描述在前(为空则省略)+ 实际内容,与面板列表的显示顺序一致。 */
+    private fun phraseLabel(o: JSONObject): String {
+        val desc = o.optString("description")
+        val content = o.optString("content")
+        return if (desc.isBlank()) content else "[$desc] $content"
     }
 
     private fun indexByUuid(arr: JSONArray): Map<String, JSONObject> {

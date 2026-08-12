@@ -5,6 +5,10 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -330,15 +334,32 @@ class SyncActivity : Activity() {
 
     // ---------------------------------------------------------------- 树:条目(第 2 级)
     private fun entryNode(origin: SyncEngine.Origin, d: SyncEngine.Diff): View {
-        val raw = d.winner.optString("content").replace("\n", " ")
+        // 描述在前、实际内容在后,与常用语面板列表一致:描述字号更小、颜色更浅,换行区分两部分
+        val desc = d.winner.optString("description").replace("\n", " ")
+        val content = d.winner.optString("content").replace("\n", " ")
+        val raw = if (desc.isBlank()) content else "$desc\n$content"
         val truncatable = raw.length > 40                 // 超过 40 字才会出现省略号
         val key = "entry:${d.uuid}"
         val expanded = key in expandedEntries
-        val text = if (truncatable && !expanded) raw.take(40) + "…" else raw
+
+        val body = SpannableStringBuilder()
+        if (desc.isNotBlank()) {
+            val start = body.length
+            body.append(desc)
+            body.setSpan(RelativeSizeSpan(0.83f), start, body.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            body.setSpan(ForegroundColorSpan(Color.parseColor("#9AA0A6")), start, body.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            body.append("\n")
+        }
+        body.append(content)
+        val shown: CharSequence = if (truncatable && !expanded)
+            SpannableStringBuilder(body.subSequence(0, minOf(40, body.length))).append("…")
+        else body
+        val label = SpannableStringBuilder("📄 ").append(shown)
+
         return treeRow(
             level = 2,
             key = key,
-            label = "📄 $text",
+            label = label,
             expandable = truncatable,                     // 只有会被截断的条目才显示折叠/展开箭头
             expanded = expanded,
             maxLines = if (expanded) Int.MAX_VALUE else 2,
@@ -346,7 +367,7 @@ class SyncActivity : Activity() {
                 if (expanded) expandedEntries.remove(key) else expandedEntries.add(key)
                 renderCompare()
             },
-            onLongDelete = { confirmDelete(origin, listOf(d), "条目「${raw.take(40)}」") },
+            onLongDelete = { confirmDelete(origin, listOf(d), "条目「${raw.take(40).replace("\n", " ")}」") },
         )
     }
 
@@ -399,7 +420,7 @@ class SyncActivity : Activity() {
     private fun treeRow(
         level: Int,
         key: String,
-        label: String,
+        label: CharSequence,
         expandable: Boolean,
         expanded: Boolean = key !in collapsed,            // 箭头方向;默认走折叠集合的语义
         maxLines: Int = 2,
@@ -408,7 +429,8 @@ class SyncActivity : Activity() {
     ): View {
         val arrow = if (!expandable) "　" else if (expanded) "▾ " else "▸ "
         return TextView(this).apply {
-            text = arrow + label
+            // 用 SpannableStringBuilder 拼接,保留 label 里可能带的字号/颜色 span(如描述的浅色小字)
+            text = SpannableStringBuilder(arrow).append(label)
             textSize = if (level == 0) 17f else 15f
             setTextColor(if (level == 0) Color.parseColor("#1A1A1A") else Color.parseColor("#404040"))
             setPadding(dp(8 + level * 20), dp(11), dp(12), dp(11))

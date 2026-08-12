@@ -24,6 +24,7 @@ class DataStore(context: Context) :
     data class Phrase(
         val uuid: String,
         val folderUuid: String?,
+        val description: String,
         val content: String,
         val lastUsedAt: Long,
         val updatedAt: Long,
@@ -43,7 +44,8 @@ class DataStore(context: Context) :
         )
         db.execSQL(
             "CREATE TABLE phrase (" +
-                "uuid TEXT PRIMARY KEY, folder_uuid TEXT, content TEXT NOT NULL, " +
+                "uuid TEXT PRIMARY KEY, folder_uuid TEXT, " +
+                "description TEXT NOT NULL DEFAULT '', content TEXT NOT NULL, " +
                 "last_used_at INTEGER NOT NULL DEFAULT 0, " +
                 "sort_order INTEGER NOT NULL DEFAULT 0, " +
                 "updated_at INTEGER NOT NULL)"
@@ -87,6 +89,10 @@ class DataStore(context: Context) :
                 "FROM phrase WHERE deleted = 0")
             db.execSQL("DROP TABLE phrase")
             db.execSQL("ALTER TABLE phrase_new RENAME TO phrase")
+        }
+        // v5:常用语条目拆分为「描述」+「实际内容」两部分,描述仅用于展示,发送时只发实际内容
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE phrase ADD COLUMN description TEXT NOT NULL DEFAULT ''")
         }
     }
 
@@ -217,9 +223,10 @@ class DataStore(context: Context) :
                     Phrase(
                         uuid = c.getString(0),
                         folderUuid = if (c.isNull(1)) null else c.getString(1),
-                        content = c.getString(2),
-                        lastUsedAt = c.getLong(3),
-                        updatedAt = c.getLong(4),
+                        description = c.getString(2),
+                        content = c.getString(3),
+                        lastUsedAt = c.getLong(4),
+                        updatedAt = c.getLong(5),
                     )
                 )
             }
@@ -228,8 +235,8 @@ class DataStore(context: Context) :
     }
 
     fun phrasesIn(folderUuid: String?): List<Phrase> {
-        val base = "SELECT uuid, folder_uuid, content, last_used_at, updated_at FROM phrase " +
-            "WHERE "
+        val base = "SELECT uuid, folder_uuid, description, content, last_used_at, updated_at " +
+            "FROM phrase WHERE "
         // sort_order 为手动拖动排序;相同时(如旧数据)再按 updated_at 保持原顺序
         val order = "ORDER BY sort_order ASC, updated_at ASC"
         return if (folderUuid == null) {
@@ -242,18 +249,19 @@ class DataStore(context: Context) :
     /** 「最近」面板:点选过(last_used_at>0)的常用语,按点选时间倒序。 */
     fun recentPhrases(limit: Int = 30): List<Phrase> {
         return readPhrases(
-            "SELECT uuid, folder_uuid, content, last_used_at, updated_at FROM phrase " +
+            "SELECT uuid, folder_uuid, description, content, last_used_at, updated_at FROM phrase " +
                 "WHERE last_used_at > 0 ORDER BY last_used_at DESC LIMIT $limit",
             null
         )
     }
 
-    fun addPhrase(folderUuid: String?, content: String): String {
+    fun addPhrase(folderUuid: String?, description: String, content: String): String {
         val db = writableDatabase
         val uuid = newUuid()
         db.insert("phrase", null, ContentValues().apply {
             put("uuid", uuid)
             if (folderUuid == null) putNull("folder_uuid") else put("folder_uuid", folderUuid)
+            put("description", description)
             put("content", content)
             put("last_used_at", 0)
             put("sort_order", nextSortOrder(db, folderUuid))   // 排到本文件夹末尾
@@ -294,9 +302,10 @@ class DataStore(context: Context) :
         }, "uuid = ?", arrayOf(uuid))
     }
 
-    /** 修改常用语内容。 */
-    fun updatePhrase(uuid: String, content: String) {
+    /** 修改常用语的描述 + 实际内容。 */
+    fun updatePhrase(uuid: String, description: String, content: String) {
         writableDatabase.update("phrase", ContentValues().apply {
+            put("description", description)
             put("content", content)
             put("updated_at", now())
         }, "uuid = ?", arrayOf(uuid))
@@ -314,7 +323,8 @@ class DataStore(context: Context) :
 
     fun exportPhrases(): JSONArray =
         queryToJson(
-            "SELECT uuid, folder_uuid, content, last_used_at, sort_order, updated_at FROM phrase"
+            "SELECT uuid, folder_uuid, description, content, last_used_at, sort_order, updated_at " +
+                "FROM phrase"
         )
 
     private fun queryToJson(sql: String): JSONArray {
@@ -359,6 +369,7 @@ class DataStore(context: Context) :
         val folderUuid = if (o.isNull("folder_uuid")) null else o.getString("folder_uuid")
         val cv = ContentValues().apply {
             if (folderUuid == null) putNull("folder_uuid") else put("folder_uuid", folderUuid)
+            put("description", o.optString("description"))
             put("content", o.getString("content"))
             put("last_used_at", o.optLong("last_used_at"))
             put("updated_at", o.optLong("updated_at"))
@@ -381,6 +392,6 @@ class DataStore(context: Context) :
 
     companion object {
         const val DB_NAME = "pyime_data.db"
-        const val DB_VERSION = 4
+        const val DB_VERSION = 5
     }
 }

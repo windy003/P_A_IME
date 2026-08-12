@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS phrase (
   owner        TEXT NOT NULL,
   uuid         TEXT NOT NULL,
   folder_uuid  TEXT,
+  description  TEXT NOT NULL DEFAULT '',
   content      TEXT NOT NULL,
   last_used_at INTEGER NOT NULL DEFAULT 0,
   sort_order   INTEGER NOT NULL DEFAULT 0,

@@ -1189,12 +1189,12 @@ class PinyinImeService : InputMethodService() {
             folder.uuid, multiline = false, initial = folder.name
         )
 
-    /** 编辑常用语:跳到编辑页,预填当前内容;返回后定位回该条目所在文件夹。 */
+    /** 编辑常用语:跳到编辑页,预填当前描述+内容;返回后定位回该条目所在文件夹。 */
     private fun promptEditPhrase(p: DataStore.Phrase) =
         launchTextInput(
             PhraseEditActivity.MODE_EDIT_PHRASE, "编辑常用语",
             folderUuid = p.folderUuid, multiline = true,
-            initial = p.content, phraseUuid = p.uuid
+            initial = p.content, initialDesc = p.description, phraseUuid = p.uuid
         )
 
     /**
@@ -1203,7 +1203,8 @@ class PinyinImeService : InputMethodService() {
      */
     private fun launchTextInput(
         mode: String, title: String, folderUuid: String?,
-        multiline: Boolean, initial: String? = null, phraseUuid: String? = null
+        multiline: Boolean, initial: String? = null, initialDesc: String? = null,
+        phraseUuid: String? = null
     ) {
         pendingReopenPanel = true
         pendingReopenFolderUuid = folderUuid
@@ -1216,6 +1217,7 @@ class PinyinImeService : InputMethodService() {
             putExtra(PhraseEditActivity.EXTRA_PHRASE_UUID, phraseUuid)
             putExtra(PhraseEditActivity.EXTRA_MULTILINE, multiline)
             putExtra(PhraseEditActivity.EXTRA_INITIAL, initial)
+            putExtra(PhraseEditActivity.EXTRA_INITIAL_DESC, initialDesc)
         }
         startActivity(intent)
     }
@@ -1357,12 +1359,10 @@ class PinyinImeService : InputMethodService() {
             setOnClickListener { ds?.deletePhrase(p.uuid); renderPanel() }
         }
 
-        val textView = TextView(this).apply {
-            text = p.content
-            textSize = 12f
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(colText())
+        // 描述 + 实际内容:描述在前(仅展示,可为空),点击/长按整体响应;
+        // 点击发送时只发实际内容(p.content),描述不会上屏。
+        val textContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(6), dp(10), dp(6))
             isClickable = true
             isLongClickable = true
@@ -1376,8 +1376,24 @@ class PinyinImeService : InputMethodService() {
                 true
             }
         }
+        if (p.description.isNotBlank()) {
+            textContainer.addView(TextView(this).apply {
+                text = p.description
+                textSize = 10f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(Color.parseColor("#9AA0A6"))
+            })
+        }
+        textContainer.addView(TextView(this).apply {
+            text = p.content
+            textSize = 12f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(colText())
+        })
 
-        row.addView(textView)
+        row.addView(textContainer)
         row.addView(editBtn)
         row.addView(delBtn)
 

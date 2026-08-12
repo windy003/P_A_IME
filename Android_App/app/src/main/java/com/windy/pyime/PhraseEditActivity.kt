@@ -17,6 +17,10 @@ import android.widget.Toast
  * 文字编辑页。输入法窗口内无法调起键盘打字,所以「新建文件夹 / 新建常用语」都跳到本页编辑,
  * 保存后直接写入共享的 [DataStore](同一进程内的 SQLite),返回输入法时面板重新读取即可看到。
  *
+ * 常用语(MODE_PHRASE / MODE_EDIT_PHRASE)拆成「描述」+「实际内容」两个输入框:
+ * 描述在上、实际内容在下,面板列表里两部分都显示(描述在前),但点击条目发送到输入框时只发实际内容。
+ * 文件夹相关模式不受影响,仍是单个输入框。
+ *
  * 通过 Intent extra 传入:
  *  - [EXTRA_MODE]:[MODE_FOLDER] 新建文件夹 / [MODE_PHRASE] 新建常用语 /
  *                 [MODE_RENAME_FOLDER] 重命名文件夹 / [MODE_EDIT_PHRASE] 编辑常用语
@@ -24,7 +28,8 @@ import android.widget.Toast
  *  - [EXTRA_FOLDER_UUID]:常用语所属文件夹;重命名模式下为被重命名的文件夹(folder 新建模式忽略)
  *  - [EXTRA_PHRASE_UUID]:编辑常用语模式下,被编辑的条目 uuid
  *  - [EXTRA_MULTILINE]:输入框是否多行
- *  - [EXTRA_INITIAL]:输入框预填内容(如重命名/编辑时的原内容)
+ *  - [EXTRA_INITIAL]:实际内容/文件夹名输入框预填内容(如重命名/编辑时的原内容)
+ *  - [EXTRA_INITIAL_DESC]:描述输入框预填内容(仅常用语编辑时)
  */
 class PhraseEditActivity : Activity() {
 
@@ -37,6 +42,8 @@ class PhraseEditActivity : Activity() {
         val phraseUuid = intent.getStringExtra(EXTRA_PHRASE_UUID)
         val multiline = intent.getBooleanExtra(EXTRA_MULTILINE, false)
         val initial = intent.getStringExtra(EXTRA_INITIAL)
+        val initialDesc = intent.getStringExtra(EXTRA_INITIAL_DESC)
+        val isPhraseMode = mode == MODE_PHRASE || mode == MODE_EDIT_PHRASE
         title = titleText
 
         val pad = dp(20)
@@ -52,8 +59,34 @@ class PhraseEditActivity : Activity() {
             setPadding(0, 0, 0, dp(12))
         })
 
+        // 常用语模式下,先放「描述」输入框(单行、可选,仅展示用,不会被发送)
+        var descEdit: EditText? = null
+        if (isPhraseMode) {
+            ll.addView(TextView(this).apply {
+                text = "描述(可选,仅展示,不会被发送)"
+                textSize = 12f
+                setTextColor(Color.parseColor("#808080"))
+                setPadding(0, 0, 0, dp(6))
+            })
+            descEdit = EditText(this).apply {
+                hint = "简短描述,便于辨识"
+                inputType = InputType.TYPE_CLASS_TEXT
+                if (!initialDesc.isNullOrEmpty()) { setText(initialDesc); setSelection(initialDesc.length) }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            ll.addView(descEdit)
+            ll.addView(TextView(this).apply {
+                text = "实际内容"
+                textSize = 12f
+                setTextColor(Color.parseColor("#808080"))
+                setPadding(0, dp(14), 0, dp(6))
+            })
+        }
+
         val edit = EditText(this).apply {
-            hint = if (mode == MODE_PHRASE || mode == MODE_EDIT_PHRASE) "常用语内容" else "文件夹名称"
+            hint = if (isPhraseMode) "常用语内容" else "文件夹名称"
             inputType = if (multiline)
                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             else InputType.TYPE_CLASS_TEXT
@@ -83,12 +116,13 @@ class PhraseEditActivity : Activity() {
                     Toast.makeText(this@PhraseEditActivity, "内容不能为空", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
+                val desc = descEdit?.text?.toString()?.trim() ?: ""
                 val ds = DataStore(this@PhraseEditActivity)
                 when (mode) {
                     MODE_FOLDER -> ds.addFolder(t)
                     MODE_RENAME_FOLDER -> if (folderUuid != null) ds.renameFolder(folderUuid, t)
-                    MODE_EDIT_PHRASE -> if (phraseUuid != null) ds.updatePhrase(phraseUuid, t)
-                    else -> ds.addPhrase(folderUuid, t)
+                    MODE_EDIT_PHRASE -> if (phraseUuid != null) ds.updatePhrase(phraseUuid, desc, t)
+                    else -> ds.addPhrase(folderUuid, desc, t)
                 }
                 Toast.makeText(this@PhraseEditActivity, "已保存", Toast.LENGTH_SHORT).show()
                 finish()
@@ -98,7 +132,7 @@ class PhraseEditActivity : Activity() {
 
         setContentView(ll)
 
-        // 进入即聚焦输入框并弹出键盘
+        // 进入即聚焦实际内容输入框并弹出键盘(必填项)
         edit.requestFocus()
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
     }
@@ -112,6 +146,7 @@ class PhraseEditActivity : Activity() {
         const val EXTRA_PHRASE_UUID = "phrase_uuid"
         const val EXTRA_MULTILINE = "multiline"
         const val EXTRA_INITIAL = "initial"
+        const val EXTRA_INITIAL_DESC = "initial_desc"
         const val MODE_FOLDER = "folder"
         const val MODE_PHRASE = "phrase"
         const val MODE_RENAME_FOLDER = "rename_folder"
