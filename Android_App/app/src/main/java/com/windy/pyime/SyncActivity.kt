@@ -383,25 +383,33 @@ class SyncActivity : Activity() {
             .show()
     }
 
-    /** 真正删除:本地端直接删行;云端端发删除请求(按 uuid 硬删除)。完成后从树移除。 */
+    /** 真正删除:本地端直接删行;云端端发删除请求(按 uuid 硬删除)。完成后从树移除。
+     *  每条差异可能对应该端的多行重复数据(见 [SyncEngine.Diff.extraUuids]),需要一并删掉,
+     *  否则剩下的重复行会在下次比较时又冒出一条一模一样的差异。 */
     private fun deleteFromEnd(origin: SyncEngine.Origin, items: List<SyncEngine.Diff>) {
         toast("删除中…")
         Thread {
             try {
                 if (origin == SyncEngine.Origin.LOCAL) {
-                    for (d in items) when (d.kind) {
-                        SyncEngine.Kind.FOLDER -> ds.deleteFolder(d.uuid)
-                        SyncEngine.Kind.PHRASE -> ds.deletePhrase(d.uuid)
-                        SyncEngine.Kind.CLIP -> {}
+                    for (d in items) {
+                        val uuids = listOf(d.uuid) + d.extraUuids
+                        when (d.kind) {
+                            SyncEngine.Kind.FOLDER -> uuids.forEach { ds.deleteFolder(it) }
+                            SyncEngine.Kind.PHRASE -> uuids.forEach { ds.deletePhrase(it) }
+                            SyncEngine.Kind.CLIP -> {}
+                        }
                     }
                 } else {
                     val (url, token) = session() ?: throw RuntimeException("未登录")
                     val delFolders = org.json.JSONArray()
                     val delPhrases = org.json.JSONArray()
-                    for (d in items) when (d.kind) {
-                        SyncEngine.Kind.FOLDER -> delFolders.put(d.uuid)
-                        SyncEngine.Kind.PHRASE -> delPhrases.put(d.uuid)
-                        SyncEngine.Kind.CLIP -> {}
+                    for (d in items) {
+                        val uuids = listOf(d.uuid) + d.extraUuids
+                        when (d.kind) {
+                            SyncEngine.Kind.FOLDER -> uuids.forEach { delFolders.put(it) }
+                            SyncEngine.Kind.PHRASE -> uuids.forEach { delPhrases.put(it) }
+                            SyncEngine.Kind.CLIP -> {}
+                        }
                     }
                     SyncClient(url, token).pushDelete(delFolders, delPhrases)
                 }

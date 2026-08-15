@@ -6,10 +6,14 @@ import org.json.JSONObject
 /**
  * 增量双向同步的核心逻辑(不含网络/UI)。
  *
- * 比较规则:按 uuid 匹配本地与云端(删除一律为硬删除,行不存在即「该端没有」)。
+ * 比较规则:按「身份」(文件夹名 / 路径+描述+内容)匹配本地与云端,而非 uuid
+ *  (删除一律为硬删除,行不存在即「该端没有」)。
  *  - 仅一端有  -> 差异项,归有数据的那一端(补齐到另一端)
  *  - 两端都有  -> 视为一致;内容若被编辑(updated_at 不同)按较新方传播
  *  - 两端都没有 -> 无差异
+ *  - 同一端里有多行身份相同(重复)-> 合并成一条差异,但记住全部 uuid([Diff.extraUuids]),
+ *    删除该差异时要把这些重复行也一并删掉,否则下次比较时会有另一行重复数据顶上来,
+ *    看起来像「删了又出现」。
  *
  * 删除的传播由比较面板里长按「删除该端数据」显式完成(本地直接删行、云端发删除请求),
  * 而非靠时间戳自动覆盖。
@@ -32,10 +36,14 @@ class SyncEngine(private val ds: DataStore) {
         val detail: String,   // 来源说明:仅本地/仅云端/本地较新/云端较新(+已删)
         val winner: JSONObject,
         val origin: Origin,
+        // 同一端里与 winner 「身份」相同(文件夹同名 / 常用语同路径同描述同内容)的其余重复行的 uuid。
+        // 这些行在比较时被合并显示为一条,但物理上仍是多行;删除该差异时必须一并删掉,
+        // 否则删掉 winner 那一行后,剩下的重复行会在下次比较时又冒出一条一模一样的差异。
+        val extraUuids: List<String> = emptyList(),
     )
 
     /** 计算差异项(仅文件夹与常用语;剪贴板不参与比较/同步)。
-     *  文件夹按「名字」比较,常用语按「所在文件夹名 + 文本内容」比较(均不看 uuid)。 */
+     *  文件夹按「名字」比较,常用语按「所在文件夹名 + 描述 + 文本内容」比较(均不看 uuid)。 */
     fun computeDiffs(remote: SyncClient.RemoteData): List<Diff> {
         val localFolders = ds.exportFolders()
         val out = ArrayList<Diff>()
@@ -84,14 +92,15 @@ class SyncEngine(private val ds: DataStore) {
         return m
     }
 
-    /** 文件夹按「名字」比较(而非 uuid):同名即视为同一个文件夹;仅一端有 -> 补到另一端。 */
+    /** 文件夹按「名字」比较(而非 uuid):同名即视为同一个文件夹;仅一端有 -> 补到另一端。
+     *  同一端若有多个同名文件夹(重复),都归到同一条差异里,删除时一并处理(见 [Diff.extraUuids])。 */
     private fun diffFoldersByName(localArr: JSONArray, remoteArr: JSONArray): List<Diff> {
-        fun index(arr: JSONArray): LinkedHashMap<String, JSONObject> {
-            val m = LinkedHashMap<String, JSONObject>()
+        fun index(arr: JSONArray): LinkedHashMap<String, MutableList<JSONObject>> {
+            val m = LinkedHashMap<String, MutableList<JSONObject>>()
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val n = o.optString("name")
-                if (n.isNotEmpty()) m.putIfAbsent(n, o)
+                if (n.isNotEmpty()) m.getOrPut(n) { ArrayList() }.add(o)
             }
             return m
         }
@@ -102,21 +111,25 @@ class SyncEngine(private val ds: DataStore) {
             val l = local[n]; val r = remote[n]
             when {
                 l != null && r == null ->
-                    out.add(Diff(Kind.FOLDER, l.optString("uuid"), "文件夹:$n", "仅本地", l, Origin.LOCAL))
+                    out.add(Diff(Kind.FOLDER, l[0].optString("uuid"), "文件夹:$n", "仅本地", l[0], Origin.LOCAL, extraUuidsOf(l)))
                 r != null && l == null ->
-                    out.add(Diff(Kind.FOLDER, r.optString("uuid"), "文件夹:$n", "仅云端", r, Origin.REMOTE))
+                    out.add(Diff(Kind.FOLDER, r[0].optString("uuid"), "文件夹:$n", "仅云端", r[0], Origin.REMOTE, extraUuidsOf(r)))
                 // 同名 -> 视为同一文件夹,无差异
             }
         }
         return out
     }
 
+    /** 一组同身份的行里,除第一行(winner)外其余的 uuid。 */
+    private fun extraUuidsOf(rows: List<JSONObject>): List<String> =
+        rows.drop(1).map { it.optString("uuid") }.filter { it.isNotEmpty() }
+
     /**
-     * 常用语按「路径(所在文件夹的名字)+ 文本内容」比较,而非各自的 uuid:
-     * 两端在同名文件夹下有相同内容即视为同一条(不再因 uuid 不同而重复同步);
+     * 常用语按「路径(所在文件夹的名字)+ 描述 + 文本内容」比较,而非各自的 uuid:
+     * 两端在同名文件夹下有相同描述与内容即视为同一条(不再因 uuid 不同而重复同步);
      * 仅一端有 -> 补到另一端。注意路径用文件夹「名字」而非 folder_uuid,
      * 这样即使两端同名文件夹的 uuid 不同,也能正确匹配。
-     * 注意:因内容是身份的一部分,「编辑某条文字」会被视为「旧条目消失、新条目出现」,
+     * 注意:因描述与内容都是身份的一部分,「编辑描述或文字」会被视为「旧条目消失、新条目出现」,
      * 而非内容更新(旧条目需在比较面板里手动删除)。
      */
     private fun diffPhrasesByPath(
@@ -126,13 +139,13 @@ class SyncEngine(private val ds: DataStore) {
         fun keyOf(o: JSONObject, names: Map<String, String>): String {
             val fu = if (o.isNull("folder_uuid")) "" else o.optString("folder_uuid")
             val folderName = names[fu] ?: ""          // 把 folder_uuid 翻译成文件夹名
-            return folderName + "	" + o.optString("content")   // 文件夹名(路径) + 内容
+            return folderName + "	" + o.optString("description") + "	" + o.optString("content")   // 文件夹名(路径) + 描述 + 内容
         }
-        fun index(arr: JSONArray, names: Map<String, String>): LinkedHashMap<String, JSONObject> {
-            val m = LinkedHashMap<String, JSONObject>()
+        fun index(arr: JSONArray, names: Map<String, String>): LinkedHashMap<String, MutableList<JSONObject>> {
+            val m = LinkedHashMap<String, MutableList<JSONObject>>()
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                m.putIfAbsent(keyOf(o, names), o)   // 同一端已有重复(同路径同内容)只保留第一条
+                m.getOrPut(keyOf(o, names)) { ArrayList() }.add(o)   // 同一端的重复(同路径同描述同内容)都归到同一条差异里
             }
             return m
         }
@@ -144,9 +157,9 @@ class SyncEngine(private val ds: DataStore) {
             val l = local[k]; val r = remote[k]
             when {
                 l != null && r == null ->
-                    out.add(Diff(Kind.PHRASE, l.optString("uuid"), "常用语:" + phraseLabel(l), "仅本地", l, Origin.LOCAL))
+                    out.add(Diff(Kind.PHRASE, l[0].optString("uuid"), "常用语:" + phraseLabel(l[0]), "仅本地", l[0], Origin.LOCAL, extraUuidsOf(l)))
                 r != null && l == null ->
-                    out.add(Diff(Kind.PHRASE, r.optString("uuid"), "常用语:" + phraseLabel(r), "仅云端", r, Origin.REMOTE))
+                    out.add(Diff(Kind.PHRASE, r[0].optString("uuid"), "常用语:" + phraseLabel(r[0]), "仅云端", r[0], Origin.REMOTE, extraUuidsOf(r)))
                 // 两端同路径同内容 -> 一致,无差异
             }
         }
