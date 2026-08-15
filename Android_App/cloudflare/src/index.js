@@ -9,9 +9,9 @@
  * 端点(全部 POST,JSON):
  *   /register  头 X-Admin-Key   body {username,password}          -> {ok:true}        仅管理员
  *   /login                      body {username,password}          -> {token,username}
- *   /pull      头 X-Auth-Token                                    -> {clipboard,folders,phrases}  仅本账号
- *   /push      头 X-Auth-Token  body {clipboard,folders,phrases}  写入/更新;
- *              另可带 body {del:{clipboard:[uuid],folders:[uuid],phrases:[uuid]}} 按 uuid 硬删除
+ *   /pull      头 X-Auth-Token                                    -> {folders,phrases}  仅本账号
+ *   /push      头 X-Auth-Token  body {folders,phrases}  写入/更新;
+ *              另可带 body {del:{folders:[uuid],phrases:[uuid]}} 按 uuid 硬删除
  *              -> {ok:true,applied} 写入本账号
  *
  * 数据表均含 owner 列,主键 (owner, uuid),不同账号互不可见。
@@ -44,12 +44,6 @@ async function ensureTables(db) {
       "CREATE TABLE IF NOT EXISTS users (" +
         "username TEXT PRIMARY KEY, salt TEXT NOT NULL, pass_hash TEXT NOT NULL, " +
         "token TEXT, created_at INTEGER NOT NULL)"
-    ),
-    db.prepare(
-      "CREATE TABLE IF NOT EXISTS clipboard (" +
-        "owner TEXT NOT NULL, uuid TEXT NOT NULL, content TEXT NOT NULL, " +
-        "updated_at INTEGER NOT NULL, " +
-        "PRIMARY KEY(owner, uuid))"
     ),
     db.prepare(
       "CREATE TABLE IF NOT EXISTS phrase_folder (" +
@@ -121,9 +115,6 @@ async function withAuth(env, request, handler) {
 
 // ---------------------------------------------------------------- 同步
 async function handlePull(env, _request, owner) {
-  const clipboard = (await env.DB.prepare(
-    "SELECT uuid, content, updated_at FROM clipboard WHERE owner = ?1"
-  ).bind(owner).all()).results || [];
   const folders = (await env.DB.prepare(
     "SELECT uuid, name, sort_order, updated_at FROM phrase_folder WHERE owner = ?1"
   ).bind(owner).all()).results || [];
@@ -131,17 +122,12 @@ async function handlePull(env, _request, owner) {
     "SELECT uuid, folder_uuid, description, content, last_used_at, sort_order, updated_at " +
       "FROM phrase WHERE owner = ?1"
   ).bind(owner).all()).results || [];
-  return json({ clipboard, folders, phrases });
+  return json({ folders, phrases });
 }
 
 async function handlePush(env, request, owner) {
   const body = await request.json();
   const stmts = [];
-  for (const r of body.clipboard || []) {
-    stmts.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO clipboard (owner, uuid, content, updated_at) VALUES (?1,?2,?3,?4)"
-    ).bind(owner, r.uuid, r.content, num(r.updated_at)));
-  }
   for (const r of body.folders || []) {
     stmts.push(env.DB.prepare(
       "INSERT OR REPLACE INTO phrase_folder (owner, uuid, name, sort_order, updated_at) VALUES (?1,?2,?3,?4,?5)"
@@ -152,9 +138,9 @@ async function handlePush(env, request, owner) {
       "INSERT OR REPLACE INTO phrase (owner, uuid, folder_uuid, description, content, last_used_at, sort_order, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
     ).bind(owner, r.uuid, r.folder_uuid ?? null, r.description ?? "", r.content, num(r.last_used_at), num(r.sort_order), num(r.updated_at)));
   }
-  // 删除:body.del.{clipboard,folders,phrases} 为各表要硬删除的 uuid 数组
+  // 删除:body.del.{folders,phrases} 为各表要硬删除的 uuid 数组
   const del = body.del || {};
-  for (const [table, key] of [["clipboard", "clipboard"], ["phrase_folder", "folders"], ["phrase", "phrases"]]) {
+  for (const [table, key] of [["phrase_folder", "folders"], ["phrase", "phrases"]]) {
     for (const uuid of del[key] || []) {
       stmts.push(env.DB.prepare(
         `DELETE FROM ${table} WHERE owner = ?1 AND uuid = ?2`
