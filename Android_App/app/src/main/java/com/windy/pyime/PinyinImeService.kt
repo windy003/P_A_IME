@@ -155,10 +155,10 @@ class PinyinImeService : InputMethodService() {
         'j' to "\\",
         'k' to "*",
         'l' to ";",
-        'z' to "+",
+        'z' to "'",
         'x' to "/",
         'c' to "_",
-        'v' to "'",
+        'v' to "+",
         'b' to "<",
         'n' to ":",
         'm' to "&",
@@ -1704,13 +1704,13 @@ class PinyinImeService : InputMethodService() {
 
         val r3 = newRow()
         for (n in listOf("7", "8", "9")) r3.addView(makeKey(n, 1f) { onSymbolInput(n) })
-        r3.addView(makeKey("空格", 1f) { commitText(" ") })
+        r3.addView(makeKey(".", 1f) { onSymbolInput(".") })   // 小数点
         root.addView(r3)
 
         val r4 = newRow()
         r4.addView(makeKey("返回", 1f) { closeSymbolView() })   // 0 左侧返回键:回到拼音键盘
         r4.addView(makeKey("0", 1f) { onSymbolInput("0") })   // 0 占一列
-        r4.addView(makeKey(".", 1f) { onSymbolInput(".") })   // 小数点
+        r4.addView(makeKey("空格", 1f) { commitText(" ") })
         r4.addView(makeKey("⏎", 1f) { onEnter() })
         root.addView(r4)
         return root
