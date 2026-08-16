@@ -12,8 +12,9 @@ import java.util.UUID
 /**
  * 剪贴板历史 + 常用语(含文件夹)的本地 SQLite 存储。
  *
- * 三张表都带 uuid(稳定主键)、updated_at(毫秒),用于与 Cloudflare D1 的
- * 时间戳增量双向同步。删除一律为硬删除(直接从表中删行,不留软删除墓碑)。
+ * 剪贴板历史仅本机保存,不参与同步。文件夹/常用语两张表带 uuid(稳定主键)、
+ * updated_at(毫秒),用于与 Cloudflare D1 的时间戳增量双向同步。
+ * 删除一律为硬删除(直接从表中删行,不留软删除墓碑)。
  */
 class DataStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
