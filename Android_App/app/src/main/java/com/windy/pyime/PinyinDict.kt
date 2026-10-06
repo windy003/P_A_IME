@@ -382,9 +382,15 @@ class PinyinDict(raw: String) {
         if (target == null) {   // 简拼选词:反查该词真正的拼音键(简拼按字母模糊展开)
             val letters = sylls.joinToString("")
             var abKey: String? = null
-            for (k in abbrKeys(letters)) {
+            val keys = abbrKeys(letters)
+            for (k in keys) {
                 val ab = abbr[k]
-                if (ab != null && ab.any { it.word == word }) { abKey = k; pool = ab; break }
+                if (ab != null && ab.any { it.word == word }) {
+                    abKey = k
+                    // 候选显示时合并了所有模糊简拼键,调权也必须覆盖同一个池。
+                    pool = keys.flatMap { abbr[it] ?: emptyList() }
+                    break
+                }
             }
             if (abKey != null) {
                 for ((k, v) in table) {
