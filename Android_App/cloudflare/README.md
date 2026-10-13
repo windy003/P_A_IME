@@ -7,6 +7,7 @@ App 通过这个 Worker 读写云端 D1 数据库做双向增量同步。数据�
 
 - **注册仅限管理员**:调用 `/register` 需带请求头 `X-Admin-Key`,且等于部署时设的机密 `ADMIN_KEY`。
 - **普通用户只能登录**:用 `/login` 拿 `token`,之后同步请求带 `X-Auth-Token`。
+- **一个账号可多台设备同时在线**:每次 `/login` 发一条独立 token(存 `sessions` 表),在手机 B 上登录不会顶掉手机 A;`/logout` 只注销本设备那条。
 - 密码以 `SHA-256(salt + 密码)` 存储,不存明文。
 
 ## 部署步骤
@@ -51,5 +52,6 @@ App 通过这个 Worker 读写云端 D1 数据库做双向增量同步。数据�
 |-------------|---------------|-----------------------------------|-------------------------------|
 | `/register` | `X-Admin-Key` | `{username,password}`             | `{ok:true}`                   |
 | `/login`    | —             | `{username,password}`             | `{token,username}`            |
+| `/logout`   | `X-Auth-Token`| —                                 | `{ok:true}`                   |
 | `/pull`     | `X-Auth-Token`| —                                 | `{clipboard,folders,phrases}` |
-| `/push`     | `X-Auth-Token`| `{clipboard,folders,phrases}`     | `{ok:true,applied}`           |
+| `/push`     | `X-Auth-Token`| `{folders,phrases}`               | `{ok:true,applied}`           |

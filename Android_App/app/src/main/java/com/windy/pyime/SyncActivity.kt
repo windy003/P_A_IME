@@ -205,7 +205,11 @@ class SyncActivity : Activity() {
     }
 
     private fun logout() {
+        val url = DEFAULT_SYNC_URL.trim()
+        val token = prefs().getString(KEY_SYNC_TOKEN, "").orEmpty()
         prefs().edit().remove(KEY_SYNC_TOKEN).apply()   // 保留用户名方便下次登录
+        // 顺手让服务器注销这一条 token(只注销本设备那条,不影响其他设备);失败无所谓
+        if (token.isNotEmpty()) Thread { SyncClient(url, token).logout() }.start()
         diffs.clear()
         expandedEntries.clear()
         showLogin()
@@ -231,6 +235,9 @@ class SyncActivity : Activity() {
                     renderCompare()
                 }
             } catch (e: Exception) {
+                // 只有服务器明确回 401(token 真失效)才引导重新登录;网络类失败只给「重试」,
+                // 否则一次断网就顺手删掉登录状态,下次进来又得重新登录。
+                val tokenExpired = (e as? SyncClient.HttpException)?.isTokenExpired == true
                 ui.post {
                     box.removeAllViews()
                     box.addView(titleText("比较失败"))
@@ -239,7 +246,9 @@ class SyncActivity : Activity() {
                         text = "重试"; layoutParams = mw(); setOnClickListener { startCompare() }
                     })
                     box.addView(Button(this).apply {
-                        text = "重新登录"; layoutParams = mw(); setOnClickListener { logout() }
+                        text = if (tokenExpired) "重新登录" else "退出登录"
+                        layoutParams = mw()
+                        setOnClickListener { logout() }
                     })
                 }
             }

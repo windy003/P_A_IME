@@ -11,6 +11,7 @@ import java.net.URL
  * 协议:
  *   POST /register  头 X-Admin-Key   body {username,password}  仅管理员可注册
  *   POST /login                      body {username,password}  -> {token,username}
+ *   POST /logout    头 X-Auth-Token                            注销本设备这条 token(其他设备不受影响)
  *   POST /pull      头 X-Auth-Token                            -> {clipboard,folders,phrases}
  *   POST /push      头 X-Auth-Token  body {folders,phrases} 写入/更新;
  *                                    body {del:{folders:[uuid],phrases:[uuid]}} 按 uuid 硬删除
@@ -20,6 +21,11 @@ import java.net.URL
  */
 class SyncClient(baseUrl: String, private val token: String? = null) {
     private val base = baseUrl.trimEnd('/')
+
+    /** 服务器返回非 2xx。code 为 HTTP 状态码;401 表示 token 已失效,需要重新登录。 */
+    class HttpException(val code: Int, message: String) : RuntimeException(message) {
+        val isTokenExpired: Boolean get() = code == 401
+    }
 
     class RemoteData(
         val clipboard: JSONArray,
@@ -54,6 +60,15 @@ class SyncClient(baseUrl: String, private val token: String? = null) {
             o.optJSONArray("folders") ?: JSONArray(),
             o.optJSONArray("phrases") ?: JSONArray(),
         )
+    }
+
+    /** 注销本机这条 token(只影响这一台设备);尽力而为,失败也不影响本地退出。 */
+    fun logout() {
+        try {
+            post("/logout", JSONObject(), authed = true)
+        } catch (e: Exception) {
+            // 网络不通时忽略:本地 token 已经删了,服务器那条到期自然回收
+        }
     }
 
     /** 上传文件夹与常用语(剪贴板不参与同步)。 */
@@ -97,7 +112,7 @@ class SyncClient(baseUrl: String, private val token: String? = null) {
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
             if (code !in 200..299) {
                 val msg = try { JSONObject(text).optString("error") } catch (e: Exception) { "" }
-                throw RuntimeException(if (msg.isNotEmpty()) msg else "HTTP $code")
+                throw HttpException(code, if (msg.isNotEmpty()) msg else "HTTP $code")
             }
             return if (text.isBlank()) JSONObject() else JSONObject(text)
         } finally {

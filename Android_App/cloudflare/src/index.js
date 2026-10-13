@@ -5,10 +5,12 @@
  *   - 注册仅限管理员:请求头 X-Admin-Key 必须等于机密 ADMIN_KEY(wrangler secret put ADMIN_KEY)。
  *   - 普通用户只能登录;登录返回 token,后续同步请求带 X-Auth-Token。
  *   - 密码以 SHA-256(salt + 密码) 存储,不存明文。
+ *   - 一个账号可同时持有多条 token(每台设备一条):在手机 B 上登录不会顶掉手机 A。
  *
  * 端点(全部 POST,JSON):
  *   /register  头 X-Admin-Key   body {username,password}          -> {ok:true}        仅管理员
  *   /login                      body {username,password}          -> {token,username}
+ *   /logout    头 X-Auth-Token                                    -> {ok:true} 只注销本设备的 token
  *   /pull      头 X-Auth-Token                                    -> {folders,phrases}  仅本账号
  *   /push      头 X-Auth-Token  body {folders,phrases}  写入/更新;
  *              另可带 body {del:{folders:[uuid],phrases:[uuid]}} 按 uuid 硬删除
@@ -27,6 +29,7 @@ export default {
       switch (url.pathname) {
         case "/register": return await handleRegister(env, request);
         case "/login":    return await handleLogin(env, request);
+        case "/logout":   return await handleLogout(env, request);
         case "/pull":     return await withAuth(env, request, handlePull);
         case "/push":     return await withAuth(env, request, handlePush);
         default:          return json({ error: "not found" }, 404);
@@ -44,6 +47,11 @@ async function ensureTables(db) {
       "CREATE TABLE IF NOT EXISTS users (" +
         "username TEXT PRIMARY KEY, salt TEXT NOT NULL, pass_hash TEXT NOT NULL, " +
         "token TEXT, created_at INTEGER NOT NULL)"
+    ),
+    // 每台设备一条 token,互不顶替;users.token 只作旧版兼容(见 withAuth)
+    db.prepare(
+      "CREATE TABLE IF NOT EXISTS sessions (" +
+        "token TEXT PRIMARY KEY, username TEXT NOT NULL, created_at INTEGER NOT NULL)"
     ),
     db.prepare(
       "CREATE TABLE IF NOT EXISTS phrase_folder (" +
@@ -97,18 +105,43 @@ async function handleLogin(env, request) {
   const hash = await sha256(u.salt + password);
   if (hash !== u.pass_hash) return json({ error: "用户名或密码错误" }, 401);
 
+  // 新发一条设备专用 token;不再覆盖 users.token,所以其他设备已持有的 token 继续有效。
   const token = crypto.randomUUID() + crypto.randomUUID();
-  await env.DB.prepare("UPDATE users SET token = ?1 WHERE username = ?2")
-    .bind(token, username).run();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO sessions (token, username, created_at) VALUES (?1,?2,?3)"
+    ).bind(token, username, Date.now()),
+    // 顺手清掉该账号长期不用的旧 token(正常用不到,防止表无限增长)
+    env.DB.prepare("DELETE FROM sessions WHERE username = ?1 AND created_at < ?2")
+      .bind(username, Date.now() - SESSION_TTL_MS),
+  ]);
   return json({ token, username });
+}
+
+/** 注销当前设备这一条 token(其他设备不受影响)。 */
+async function handleLogout(env, request) {
+  const token = request.headers.get("X-Auth-Token");
+  if (token) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM sessions WHERE token = ?1").bind(token),
+      // 旧版把 token 存在 users 表里,一并清掉
+      env.DB.prepare("UPDATE users SET token = NULL WHERE token = ?1").bind(token),
+    ]);
+  }
+  return json({ ok: true });
 }
 
 /** 校验 X-Auth-Token,解析出 owner 后调用 handler(env, request, owner)。 */
 async function withAuth(env, request, handler) {
   const token = request.headers.get("X-Auth-Token");
   if (!token) return json({ error: "未登录" }, 401);
-  const u = await env.DB.prepare("SELECT username FROM users WHERE token = ?1")
+  // 先查多设备的 sessions;查不到再回退到旧版的 users.token(老客户端还没重新登录时仍能用)
+  let u = await env.DB.prepare("SELECT username FROM sessions WHERE token = ?1")
     .bind(token).first();
+  if (!u) {
+    u = await env.DB.prepare("SELECT username FROM users WHERE token = ?1")
+      .bind(token).first();
+  }
   if (!u) return json({ error: "登录已失效,请重新登录" }, 401);
   return await handler(env, request, u.username);
 }
@@ -152,6 +185,9 @@ async function handlePush(env, request, owner) {
 }
 
 // ---------------------------------------------------------------- 工具
+/** 一条设备 token 的闲置保留时长:超过它在同一账号下次登录时被回收。 */
+const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
