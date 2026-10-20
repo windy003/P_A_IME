@@ -936,12 +936,15 @@ class Dict:
         # 比较池并入「简拼桶」:否则像 yun mu 这种全拼键下只有「韵母」一个词时,
         # 它本就是唯一最高,权重永远涨不上去,进不了简拼 ym 的竞争(始终排在高频词后)。
         # 纳入简拼桶后,选一次就把它提到能在简拼里也排第一。
+        # 要并入该简拼串的全部模糊音字母组合桶:打 rl 时 candidates() 会把 rl/rn/rr/
+        # ll/ln/lr/nl/nn/nr 各桶合并排序(见 abbr_keys),只跟自己所在的 rl 桶比较的话,
+        # new 仍低于 nl/ll 等桶里的高频词,选过的词照样排不到 rl 的第一。
         cmp_pool = list(pool)
         sylls_t = target.split(" ")
         if len(sylls_t) >= 2:
-            ab = self.abbr.get("".join(s[0] for s in sylls_t))
-            if ab:
-                cmp_pool += ab
+            ab_key = "".join(s[0] for s in sylls_t)
+            for k in self.abbr_keys(ab_key):
+                cmp_pool += self.abbr.get(k, ())
         elif len(sylls_t) == 1:
             # 单音节键同理要并入「单字母索引」桶:该桶按拼音首字母把 a/ai/an/ang…
             # 各键的单字全部混在一起展示(见 candidates() 的单字母展开),选词调权
