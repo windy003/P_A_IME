@@ -152,6 +152,25 @@ class DataStore(context: Context) :
         writableDatabase.delete("clipboard", "uuid = ?", arrayOf(uuid))
     }
 
+    /**
+     * 关键词搜索剪贴板历史。[terms] 为关键词列表,任一命中即算匹配,
+     * 按最近更新时间倒序返回。
+     */
+    fun searchClips(terms: List<String>, limit: Int = SEARCH_LIMIT): List<Clip> {
+        if (terms.isEmpty()) return emptyList()
+        val where = terms.joinToString(" OR ") { "content LIKE ? ESCAPE '\\'" }
+        val args = terms.map { likePattern(it) }.toTypedArray()
+        val out = ArrayList<Clip>()
+        readableDatabase.rawQuery(
+            "SELECT uuid, content, updated_at FROM clipboard WHERE $where " +
+                "ORDER BY updated_at DESC LIMIT $limit",
+            args
+        ).use { c ->
+            while (c.moveToNext()) out.add(Clip(c.getString(0), c.getString(1), c.getLong(2)))
+        }
+        return out
+    }
+
     // ---------------------------------------------------------------- 文件夹
     fun folders(): List<Folder> {
         val out = ArrayList<Folder>()
@@ -317,6 +336,33 @@ class DataStore(context: Context) :
         writableDatabase.delete("phrase", "uuid = ?", arrayOf(uuid))
     }
 
+    /**
+     * 关键词搜索常用语。[terms] 为关键词列表,内容、描述或所属文件夹名
+     * 任一命中即算匹配;最近点选过的排在前面。
+     */
+    fun searchPhrases(terms: List<String>, limit: Int = SEARCH_LIMIT): List<Phrase> {
+        if (terms.isEmpty()) return emptyList()
+        val cond = terms.joinToString(" OR ") {
+            "(p.content LIKE ? ESCAPE '\\' OR p.description LIKE ? ESCAPE '\\' " +
+                "OR f.name LIKE ? ESCAPE '\\')"
+        }
+        val args = ArrayList<String>(terms.size * 3)
+        for (t in terms) {
+            val p = likePattern(t)
+            args.add(p); args.add(p); args.add(p)
+        }
+        return readPhrases(
+            "SELECT p.uuid, p.folder_uuid, p.description, p.content, p.last_used_at, p.updated_at " +
+                "FROM phrase p LEFT JOIN phrase_folder f ON p.folder_uuid = f.uuid " +
+                "WHERE $cond ORDER BY p.last_used_at DESC, p.updated_at DESC LIMIT $limit",
+            args.toTypedArray()
+        )
+    }
+
+    /** 把用户输入转成 LIKE 的「包含」模式,并转义 SQL 通配符(% _ \)。 */
+    private fun likePattern(s: String): String =
+        "%" + s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
     // ---------------------------------------------------------------- 同步导出/导入
     /** 导出全部行,供与云端比较/上传。字段名即列名。 */
     fun exportFolders(): JSONArray =
@@ -394,5 +440,6 @@ class DataStore(context: Context) :
     companion object {
         const val DB_NAME = "pyime_data.db"
         const val DB_VERSION = 5
+        const val SEARCH_LIMIT = 30   // 搜索面板每类(剪贴板/常用语)最多展示的条数
     }
 }

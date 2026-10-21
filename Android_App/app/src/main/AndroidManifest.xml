@@ -36,6 +36,13 @@
             android:label="@string/app_name"
             android:windowSoftInputMode="stateVisible|adjustResize" />
 
+        <!-- 搜索页:全屏搜索剪贴板历史与常用语,点击结果复制到剪贴板 -->
+        <activity
+            android:name=".SearchActivity"
+            android:exported="false"
+            android:label="@string/search_title"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
         <!-- 同步页:登录 Worker、比较两端差异、执行增量双向同步 -->
         <activity
             android:name=".SyncActivity"

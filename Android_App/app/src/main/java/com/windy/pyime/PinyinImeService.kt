@@ -225,7 +225,19 @@ class PinyinImeService : InputMethodService() {
             // (进编辑页时保留 pendingReopenPanel,等返回外部 app 再重开面板)
             closeToolPanel()
         }
+        // 从搜索页(SearchActivity)返回:剪贴板已在搜索页写好,这里把同一段文字插回原来的输入框
+        commitPendingSearchText()
         captureClipboard()
+    }
+
+    /**
+     * 若搜索页留下了待插入文字,则插入当前输入框并清空。
+     * 在 onStartInput 与 onStartInputView 两处都调用:谁先被系统调用就由谁插入,取出后置空不会重复。
+     */
+    private fun commitPendingSearchText() {
+        val text = pendingCommitText ?: return
+        pendingCommitText = null
+        currentInputConnection?.commitText(text, 1)
     }
 
     /** 读取系统剪贴板当前内容,与最新一条不同则存入历史顶端(输入法已获焦,允许读取)。 */
@@ -348,9 +360,12 @@ class PinyinImeService : InputMethodService() {
     /** 工具按钮定义:id 用于持久化顺序,icon 是显示图标,label 是排序编辑时的文字说明。 */
     private data class ToolDef(val id: String, val icon: String, val label: String)
 
-    /** 全部可用的工具按钮(顺序仅作为首次使用时的默认排序)。 */
+    /**
+     * 全部可排序的工具按钮(顺序仅作为首次使用时的默认排序)。
+     * 展开按钮 ☰ 不在此列表中:它固定在顶栏第一格,避免被挤出顶栏后无法再打开展开面板。
+     */
     private val toolDefs = listOf(
-        ToolDef("menu", "☰", "展开菜单"),
+        ToolDef("search", "🔍", "搜索"),
         ToolDef("symbol", "➕", "符号"),
         ToolDef("clip", "📋", "剪贴板"),
         ToolDef("phrase", "📌", "常用语"),
@@ -368,6 +383,7 @@ class PinyinImeService : InputMethodService() {
     private fun runToolAction(id: String) {
         when (id) {
             "menu" -> toggleToolbarExpanded()
+            "search" -> openSearchActivity()
             "symbol" -> openSymbolPicker()
             "clip" -> { toolTab = TAB_CLIP; currentFolder = null; openToolPanel() }
             "phrase" -> { toolTab = TAB_PHRASE; currentFolder = null; openToolPanel() }
@@ -388,7 +404,10 @@ class PinyinImeService : InputMethodService() {
             ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
         val validIds = toolDefs.map { it.id }
         val order = saved.filter { it in validIds }.toMutableList()
-        for (id in validIds) if (id !in order) order.add(id)   // 补齐(含将来新增)
+        for (id in validIds) if (id !in order) {
+            // 搜索是常用入口:新按钮(含老用户已保存的顺序里没有它时)插到展开按钮旁边,而不是沉到展开面板
+            if (id == "search") order.add(minOf(1, order.size), id) else order.add(id)
+        }
         toolOrder = order
     }
 
@@ -452,15 +471,16 @@ class PinyinImeService : InputMethodService() {
         if (toolbarEditing) renderToolbarEditList(extra) else renderToolbarExtra(extra)
     }
 
-    /** 只刷新顶栏(2×6 网格:首格展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
+    /** 只刷新顶栏(2×6 网格:首格固定展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
     private fun renderToolbarTop() {
         val top = toolbarTopRow ?: return
         top.removeAllViews()
-        // 先按 toolOrder 顺序建好按钮(menu 也参与),不足补空格。
         val items = mutableListOf<View>()
-        for (id in toolOrder.take(TOOL_TOP_COUNT)) items.add(
-            if (id == "menu") toolbarButton(if (toolbarExpanded) "▲" else "☰") { toggleToolbarExpanded() }
-            else toolbarButton(toolIcon(id)) { if (toolbarExpanded) collapseToolbar(); runToolAction(id) }
+        // 展开按钮固定在顶栏第一格(最右),不参与排序:保证任何时候都能打开展开面板
+        items.add(toolbarButton(if (toolbarExpanded) "▲" else "☰") { toggleToolbarExpanded() })
+        // 其余按钮按 toolOrder 顺序排列,顶栏除首格外还能放 TOOL_TOP_COUNT-1 个
+        for (id in toolOrder.take(TOOL_TOP_COUNT - 1)) items.add(
+            toolbarButton(toolIcon(id)) { if (toolbarExpanded) collapseToolbar(); runToolAction(id) }
         )
         while (items.size < TOOLBAR_COLS * TOOLBAR_ROWS) items.add(toolbarSpacerCell())
         // 行优先映射(从右往左):列表前 TOOLBAR_COLS 项 → 上行(右→左),其余 → 下行(右→左)
@@ -499,7 +519,7 @@ class PinyinImeService : InputMethodService() {
         opRow.addView(textButton("✎ 编辑排序") { toolbarEditing = true; renderToolbar() })
         extra.addView(opRow)
 
-        val panelIds = toolOrder.drop(TOOL_TOP_COUNT)
+        val panelIds = toolOrder.drop(TOOL_TOP_COUNT - 1)   // 顶栏首格固定给 ☰
         if (panelIds.isEmpty()) {
             extra.addView(emptyHint("按钮都在顶栏。点「编辑排序」可把按钮挪到这里。"))
             return
@@ -511,15 +531,15 @@ class PinyinImeService : InputMethodService() {
         for (id in panelIds) row.addView(toolbarButton(toolIcon(id)) {
             collapseToolbar(); runToolAction(id)
         })
-        repeat((TOOL_TOP_COUNT - panelIds.size).coerceAtLeast(0)) {
+        repeat((TOOL_TOP_COUNT - 1 - panelIds.size).coerceAtLeast(0)) {
             row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, dp(50), 1f) })
         }
         extra.addView(row)
     }
 
-    /** 展开面板(编辑模式):全部按钮竖排,长按拖动排序;前 TOOL_TOP_COUNT 个进顶栏。 */
+    /** 展开面板(编辑模式):首行是固定的展开按钮,其余按钮竖排,长按拖动排序。 */
     private fun renderToolbarEditList(extra: LinearLayout) {
-        extra.addView(emptyHint("长按拖动调整顺序。前 $TOOL_TOP_COUNT 个显示在顶栏,其余在此展开面板。").apply {
+        extra.addView(emptyHint("「展开所有按钮」固定在顶栏第一格,不可排序。\n其余按钮长按拖动调整顺序,前 ${TOOL_TOP_COUNT - 1} 个显示在顶栏。").apply {
             setPadding(dp(12), dp(8), dp(12), dp(8))
         })
         val opRow = LinearLayout(this).apply {
@@ -529,7 +549,11 @@ class PinyinImeService : InputMethodService() {
         opRow.addView(textButton("✓ 完成") { toolbarEditing = false; renderToolbar() })
         extra.addView(opRow)
 
+        // 滚动内容:固定的展开按钮 + 可拖动的按钮列表(拖拽容器只含可排序行,固定行不参与重排)
+        val scrollContent = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scrollContent.addView(fixedToolRow("☰", "展开所有按钮"))
         val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scrollContent.addView(listContainer)
         // 排序列表撑满全屏高度:屏幕高减去上方已占区域(预览 32 + 顶栏 TOOLBAR_ROWS 行网格 +
         // 编辑头部的提示与「完成」约 110),让全部按钮一屏可见、便于拖动,而非挤在下半屏的固定 4 行里。
         val reservedTop = dp(PREVIEW_HEIGHT + TOOLBAR_ROWS * TOOLBAR_ROW_HEIGHT + 110)
@@ -537,7 +561,7 @@ class PinyinImeService : InputMethodService() {
             .coerceAtLeast(dp(rowHeightDp * 4))
         val scroll = ScrollView(this).apply {
             isFillViewport = true
-            addView(listContainer)
+            addView(scrollContent)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, listH
             )
@@ -559,6 +583,36 @@ class PinyinImeService : InputMethodService() {
         }
         // 网格按行优先从右往左填充,故列表正序即为「上行右→左、再下行右→左」
         for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
+    }
+
+    /** 排序列表顶部不可拖动的一行(展开按钮固定在第一格)。 */
+    private fun fixedToolRow(icon: String, label: String): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                setColor(colSurface())
+                cornerRadius = dp(6).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(6), dp(3), dp(6), dp(3)) }
+        }
+        row.addView(TextView(this).apply {
+            text = "$icon  $label"
+            textSize = 14f
+            setTextColor(colText())
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        row.addView(TextView(this).apply {
+            text = "固定第一格"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setPadding(dp(12), dp(10), dp(14), dp(10))
+        })
+        return row
     }
 
     /** 排序编辑中的一行:图标 + 名称 + 拖动手柄;row.tag = id。 */
@@ -1013,6 +1067,15 @@ class PinyinImeService : InputMethodService() {
     private fun onHide() {
         if (buf.isNotEmpty()) clearBuf()
         requestHideSelf(0)
+    }
+
+    // ---------------------------------------------------------------- 搜索
+    /** 打开全屏搜索页:搜索剪贴板历史与常用语,点击结果复制到系统剪贴板。 */
+    private fun openSearchActivity() {
+        if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
+        startActivity(android.content.Intent(this, SearchActivity::class.java).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
     }
 
     // ---------------------------------------------------------------- 工具面板
@@ -2367,6 +2430,7 @@ class PinyinImeService : InputMethodService() {
     override fun onStartInput(attribute: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         clearBuf()
+        commitPendingSearchText()   // 搜索页返回时,输入框重新开始时立即插回选中文字
     }
 
     /** 编辑框选区变化回调:缓存光标/选区位置,供选择模式精确扩展选区。 */
@@ -2390,6 +2454,12 @@ class PinyinImeService : InputMethodService() {
     }
 
     companion object {
+        /**
+         * 搜索页选中结果后待插回原输入框的文字。SearchActivity 与本服务在同一进程:
+         * 搜索页在 onPause 时写入,原输入框重新唤起输入法时由本服务取出并 commit,取出后清空。
+         */
+        @Volatile var pendingCommitText: String? = null
+
         const val PREFS = "pyime"
         const val KEY_ROW_HEIGHT = "row_height_dp"
         const val KEY_TOOL_ORDER = "toolbar_order"   // 工具按钮顺序(逗号分隔的 id)

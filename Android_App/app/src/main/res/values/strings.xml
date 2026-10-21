@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">PyIME 设置</string>
     <string name="ime_name">PyIME 拼音</string>
+    <string name="search_title">搜索</string>
 </resources>
