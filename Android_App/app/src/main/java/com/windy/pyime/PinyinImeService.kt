@@ -15,6 +15,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -69,9 +70,8 @@ class PinyinImeService : InputMethodService() {
     private var toolbarRow: LinearLayout? = null   // 常驻工具条容器(顶栏 + 展开面板)
     private var keyboardKeysGroup: LinearLayout? = null // 字母/功能键位区(工具条展开时隐藏,腾出空间)
     private var toolbarTopRow: LinearLayout? = null     // 顶部一行:展开按钮 + 前若干个按钮
-    private var toolbarExtraPanel: LinearLayout? = null // 展开面板:其余按钮 / 排序编辑
+    private var toolbarExtraPanel: LinearLayout? = null // 展开面板:其余按钮
     private var toolbarExpanded = false                 // 展开面板是否打开
-    private var toolbarEditing = false                  // 是否处于按钮排序编辑模式
     private var toolOrder: MutableList<String> = mutableListOf()  // 工具按钮顺序(存按钮 id)
     private var modeKey: TextView? = null
 
@@ -210,6 +210,9 @@ class PinyinImeService : InputMethodService() {
             || isNight() != builtNight) {   // 高度改过 或 系统夜间模式切换过 -> 重建
             setInputView(buildInputView())
         }
+        // 从排序页(ToolbarOrderActivity)返回时顺序可能已改:重新读取并刷新工具条
+        loadToolOrder()
+        renderToolbar()
         // 区分当前输入框是自己的编辑页,还是外部 app 的输入框
         val isOwnEditor = info?.packageName == packageName
         if (pendingReopenPanel && !isOwnEditor) {
@@ -357,28 +360,6 @@ class PinyinImeService : InputMethodService() {
         return root
     }
 
-    /** 工具按钮定义:id 用于持久化顺序,icon 是显示图标,label 是排序编辑时的文字说明。 */
-    private data class ToolDef(val id: String, val icon: String, val label: String)
-
-    /**
-     * 全部可排序的工具按钮(顺序仅作为首次使用时的默认排序)。
-     * 展开按钮 ☰ 不在此列表中:它固定在顶栏第一格,避免被挤出顶栏后无法再打开展开面板。
-     */
-    private val toolDefs = listOf(
-        ToolDef("search", "🔍", "搜索"),
-        ToolDef("symbol", "➕", "符号"),
-        ToolDef("clip", "📋", "剪贴板"),
-        ToolDef("phrase", "📌", "常用语"),
-        ToolDef("paste", "⎘", "粘贴最近"),
-        ToolDef("cursor", "✥", "光标"),
-        ToolDef("hide", "⌄", "收起键盘"),
-        ToolDef("handwriting", "✍", "手写"),
-        ToolDef("sync", "☁", "同步"),
-        ToolDef("selectall", "🆎", "全选文字"),
-        ToolDef("copy", "📄", "复制"),
-        ToolDef("clear", "❌", "清除"),
-    )
-
     /** 执行某个工具按钮的动作。 */
     private fun runToolAction(id: String) {
         when (id) {
@@ -398,21 +379,9 @@ class PinyinImeService : InputMethodService() {
         }
     }
 
-    /** 从设置读取按钮顺序;补齐新增按钮、剔除已失效的 id。 */
+    /** 从设置读取按钮顺序(排序由独立的 [ToolbarOrderActivity] 修改)。 */
     private fun loadToolOrder() {
-        val saved = prefs().getString(KEY_TOOL_ORDER, null)
-            ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
-        val validIds = toolDefs.map { it.id }
-        val order = saved.filter { it in validIds }.toMutableList()
-        for (id in validIds) if (id !in order) {
-            // 搜索是常用入口:新按钮(含老用户已保存的顺序里没有它时)插到展开按钮旁边,而不是沉到展开面板
-            if (id == "search") order.add(minOf(1, order.size), id) else order.add(id)
-        }
-        toolOrder = order
-    }
-
-    private fun saveToolOrder() {
-        prefs().edit().putString(KEY_TOOL_ORDER, toolOrder.joinToString(",")).apply()
+        toolOrder = ToolCatalog.loadOrder(prefs())
     }
 
     /** 粘贴最近一条剪贴板历史。 */
@@ -429,7 +398,7 @@ class PinyinImeService : InputMethodService() {
 
     /**
      * 常驻工具条:无拼音输入时显示。顶栏放展开按钮 + 前 TOOL_TOP_COUNT 个按钮,
-     * 其余按钮收进展开面板;展开后可点「编辑排序」长按拖动调整全部按钮顺序。
+     * 其余按钮收进展开面板;点「编辑排序」会打开 [ToolbarOrderActivity] 调整全部按钮顺序。
      */
     private fun buildToolbar(): LinearLayout {
         loadToolOrder()
@@ -459,7 +428,7 @@ class PinyinImeService : InputMethodService() {
         return container
     }
 
-    /** 根据当前顺序与展开/编辑状态重建整个工具条。 */
+    /** 根据当前顺序与展开状态重建整个工具条。 */
     private fun renderToolbar() {
         renderToolbarTop()
         // 展开面板时隐藏下方键位区,腾出空间;收起时恢复。
@@ -467,11 +436,11 @@ class PinyinImeService : InputMethodService() {
         val extra = toolbarExtraPanel ?: return
         extra.removeAllViews()
         extra.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
-        if (!toolbarExpanded) { toolbarEditing = false; return }
-        if (toolbarEditing) renderToolbarEditList(extra) else renderToolbarExtra(extra)
+        if (!toolbarExpanded) return
+        renderToolbarExtra(extra)
     }
 
-    /** 只刷新顶栏(2×6 网格:首格固定展开按钮 + 前若干按钮),用于拖动排序时的实时预览。 */
+    /** 只刷新顶栏(2×6 网格:首格固定展开按钮 + 前若干按钮)。 */
     private fun renderToolbarTop() {
         val top = toolbarTopRow ?: return
         top.removeAllViews()
@@ -516,7 +485,7 @@ class PinyinImeService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        opRow.addView(textButton("✎ 编辑排序") { toolbarEditing = true; renderToolbar() })
+        opRow.addView(textButton("✎ 编辑排序") { openToolbarOrderActivity() })
         extra.addView(opRow)
 
         val panelIds = toolOrder.drop(TOOL_TOP_COUNT - 1)   // 顶栏首格固定给 ☰
@@ -537,140 +506,17 @@ class PinyinImeService : InputMethodService() {
         extra.addView(row)
     }
 
-    /** 展开面板(编辑模式):首行是固定的展开按钮,其余按钮竖排,长按拖动排序。 */
-    private fun renderToolbarEditList(extra: LinearLayout) {
-        extra.addView(emptyHint("「展开所有按钮」固定在顶栏第一格,不可排序。\n其余按钮长按拖动调整顺序,前 ${TOOL_TOP_COUNT - 1} 个显示在顶栏。").apply {
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        })
-        val opRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        opRow.addView(textButton("✓ 完成") { toolbarEditing = false; renderToolbar() })
-        extra.addView(opRow)
 
-        // 滚动内容:固定的展开按钮 + 可拖动的按钮列表(拖拽容器只含可排序行,固定行不参与重排)
-        val scrollContent = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scrollContent.addView(fixedToolRow("☰", "展开所有按钮"))
-        val listContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scrollContent.addView(listContainer)
-        // 排序列表撑满全屏高度:屏幕高减去上方已占区域(预览 32 + 顶栏 TOOLBAR_ROWS 行网格 +
-        // 编辑头部的提示与「完成」约 110),让全部按钮一屏可见、便于拖动,而非挤在下半屏的固定 4 行里。
-        val reservedTop = dp(PREVIEW_HEIGHT + TOOLBAR_ROWS * TOOLBAR_ROW_HEIGHT + 110)
-        val listH = (resources.displayMetrics.heightPixels - reservedTop)
-            .coerceAtLeast(dp(rowHeightDp * 4))
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(scrollContent)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, listH
-            )
-        }
-        extra.addView(scroll)
-        // 上面的 listH 用整屏高度估算,未扣除底部导航栏/手势条,部分机型最后一行被遮挡、
-        // 滚也滚不出(列表底部落在可见区外)。布局完成后用窗口实际可见区域(已排除系统栏)校正:
-        // 把列表底部对齐到可见区底并留 8dp 余量,各机型都能看全。
-        scroll.post {
-            val frame = android.graphics.Rect()
-            scroll.getWindowVisibleDisplayFrame(frame)
-            val loc = IntArray(2)
-            scroll.getLocationOnScreen(loc)
-            val avail = frame.bottom - loc[1] - dp(8)
-            if (avail > dp(80) && avail != scroll.height) {
-                scroll.layoutParams = scroll.layoutParams.apply { height = avail }
-                scroll.requestLayout()
-            }
-        }
-        // 网格按行优先从右往左填充,故列表正序即为「上行右→左、再下行右→左」
-        for (id in toolOrder) listContainer.addView(toolEditRow(id, listContainer))
-    }
-
-    /** 排序列表顶部不可拖动的一行(展开按钮固定在第一格)。 */
-    private fun fixedToolRow(icon: String, label: String): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply {
-                setColor(colSurface())
-                cornerRadius = dp(6).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(6), dp(3), dp(6), dp(3)) }
-        }
-        row.addView(TextView(this).apply {
-            text = "$icon  $label"
-            textSize = 14f
-            setTextColor(colText())
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        row.addView(TextView(this).apply {
-            text = "固定第一格"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#9AA0A6"))
-            setPadding(dp(12), dp(10), dp(14), dp(10))
-        })
-        return row
-    }
-
-    /** 排序编辑中的一行:图标 + 名称 + 拖动手柄;row.tag = id。 */
-    @SuppressLint("ClickableViewAccessibility")
-    private fun toolEditRow(id: String, container: LinearLayout): View {
-        val def = toolDefs.first { it.id == id }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply {
-                setColor(colSurface())
-                cornerRadius = dp(6).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(6), dp(3), dp(6), dp(3)) }
-            tag = id
-        }
-        row.addView(TextView(this).apply {
-            text = "${def.icon}  ${def.label}"
-            textSize = 14f
-            setTextColor(colText())
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        val handle = TextView(this).apply {
-            text = "≡"
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#9AA0A6"))
-            setPadding(dp(12), dp(10), dp(14), dp(10))
-        }
-        handle.setOnTouchListener(makeDragTouch(row, container) { persistToolOrder(it) })
-        row.addView(handle)
-        return row
-    }
-
-    /** 按编辑列表当前顺序(row.tag = id)写回按钮顺序,并实时刷新顶栏。 */
-    private fun persistToolOrder(container: LinearLayout) {
-        val ids = (0 until container.childCount).mapNotNull { container.getChildAt(it).tag as? String }
-        if (ids.isEmpty()) return
-        toolOrder = ids.toMutableList()
-        saveToolOrder()
-        renderToolbarTop()
-    }
-
-    private fun toolIcon(id: String) = toolDefs.first { it.id == id }.icon
+    private fun toolIcon(id: String) = ToolCatalog.icon(id)
 
     private fun toggleToolbarExpanded() {
         toolbarExpanded = !toolbarExpanded
-        if (!toolbarExpanded) toolbarEditing = false
         renderToolbar()
     }
 
     /** 收起展开面板(点按钮执行动作前调用,回到键盘时保持简洁)。 */
     private fun collapseToolbar() {
         toolbarExpanded = false
-        toolbarEditing = false
         renderToolbar()
     }
 
@@ -2215,6 +2061,14 @@ class PinyinImeService : InputMethodService() {
     private fun openSync() {
         if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
         val intent = android.content.Intent(this, SyncActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    /** 打开全屏排序页:全部按钮排在屏幕顶部,长按提起拖动调整顺序。 */
+    private fun openToolbarOrderActivity() {
+        collapseToolbar()
+        val intent = android.content.Intent(this, ToolbarOrderActivity::class.java)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
     }

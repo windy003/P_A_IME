@@ -43,6 +43,13 @@
             android:label="@string/search_title"
             android:windowSoftInputMode="stateVisible|adjustResize" />
 
+        <!-- 按钮排序页:全屏界面,全部工具按钮排在屏幕顶部,长按拖动调整顺序 -->
+        <activity
+            android:name=".ToolbarOrderActivity"
+            android:exported="false"
+            android:label="@string/order_title"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- 同步页:登录 Worker、比较两端差异、执行增量双向同步 -->
         <activity
             android:name=".SyncActivity"

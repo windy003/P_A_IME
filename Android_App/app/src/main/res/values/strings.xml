@@ -2,4 +2,5 @@
     <string name="app_name">PyIME 设置</string>
     <string name="ime_name">PyIME 拼音</string>
     <string name="search_title">搜索</string>
+    <string name="order_title">编辑排序</string>
 </resources>
