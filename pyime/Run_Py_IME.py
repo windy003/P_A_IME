@@ -885,6 +885,47 @@ class Dict:
         for w, _wt, _ki in pool:
             add(w, nseg, _wt)
 
+    def _part_abbr_lookup(self, word, sylls):
+        """部分简拼选词(前缀全拼 + 末尾只打声母,如 zhan'm、nihm)反查该词真正的
+        完整拼音键。返回 (拼音键, 用于比较权重的候选池);找不到返回 (None, None)。
+
+        必须单独反查:按字面音节拼出来的 "zhan m" 不是词库里的键,按全声母拼出来的
+        "zhanm" 也不是简拼键(真正的简拼是 "zm"),两条路都查不到,调权会被直接跳过——
+        再打 zhan'm 或 zm 都排不到最前面。"""
+        if not self.part_abbr or len(sylls) < 2:
+            return None, None
+        letters = "".join(sylls)
+        pool, found = [], None
+        for t in range(1, len(letters)):  # 末尾 t 个字母当作连续声母(与 _add_part_abbr 一致)
+            tail = letters[-t:]
+            if not all(c in _INITIALS_1 for c in tail):
+                break
+            pre = self.segment(letters[:-t])
+            if not all(s in self.syllables for s in pre):
+                continue
+            for combo in self.fuzzy_keys(pre):
+                bucket = self.part_abbr.get((combo, tail))
+                if not bucket:
+                    continue
+                pool += bucket  # 同一输入可命中的桶都要纳入比较,否则赢不过别的模糊桶
+                if found is not None or not any(w == word for w, _ in bucket):
+                    continue
+                cs = combo.split(" ")
+                # 反查词的完整拼音键:音节数相符、前缀与模糊组合一致、末段声母串一致
+                for k, words in self.table.items():
+                    ks = k.split(" ")
+                    if (len(ks) == len(cs) + len(tail) and ks[:len(cs)] == cs
+                            and "".join(s[0] for s in ks[len(cs):]) == tail
+                            and any(w == word for w, _ in words)):
+                        found = k
+                        break
+        if found is None:
+            return None, None
+        pool += self.table.get(found, ())
+        for ak in self.abbr_keys("".join(s[0] for s in found.split(" "))):
+            pool += self.abbr.get(ak, ())  # 并入简拼桶,调权后打 zm 也能排第一
+        return found, pool
+
     def bump(self, word, sub):
         """选词调权:把选中词的权重提为同拼音候选池里的最大权重 + 1(内存立即生效)。
         返回需写回文件的 (拼音键, 新权重);已是唯一最高或找不到时返回 None。"""
@@ -922,6 +963,10 @@ class Dict:
                             and any(w == word for w, _ in v)):
                         target = k
                         break
+        if target is None:  # 部分简拼选词(如 zhan'm):反查该词真正的完整拼音键
+            target, part_pool = self._part_abbr_lookup(word, sylls)
+            if target is not None:
+                pool = part_pool
         if target is None and len(sylls) == 1 and sylls[0] in self.initial_idx:
             # 单字母选词(如打 s 出「是/说/上」):反查该字真正的拼音键。
             # 单字母不是完整音节(如 s 本身不合法),前两条反查都命中不了,
@@ -1651,6 +1696,14 @@ def selftest(dic):
     assert any(w == "你好" for w, _n in cands[:10]), [w for w, _ in cands[:10]]
     cands, segs = dic.candidates("zg")        # 选 zg 应消耗整个缓冲区
     assert segs == ["z", "g"], segs
+    # 部分简拼(没打全,如前缀全拼+末字声母)选词也要能调权:
+    # 选「赞美」后,再打它的简拼 zm 应排到第一
+    d2 = Dict(DICT_FILE)
+    cands, segs = d2.candidates("zhan'm")
+    hit = [(w, n) for w, n in cands if w == "赞美"]
+    assert hit, [w for w, _ in cands[:10]]
+    assert d2.bump("赞美", segs[:hit[0][1]]), "部分简拼选词未调权"
+    assert d2.candidates("zm")[0][0][0] == "赞美", [w for w, _ in d2.candidates("zm")[0][:5]]
     print("selftest OK —— 词条数:%d,音节数:%d,模糊音节:%d,简拼串:%d"
           % (len(dic.table), len(dic.syllables), len(dic.fuzzy), len(dic.abbr)))
 
