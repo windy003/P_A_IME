@@ -1,8 +1,10 @@
 package com.windy.pyime
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -24,15 +26,17 @@ import android.widget.Toast
 
 /**
  * 全屏搜索页(从输入法工具条的搜索按钮打开,与键盘独立):
- * 搜索剪贴板历史与常用语,支持「全部 / 只在剪贴板历史中 / 只在常用语中」三种范围。
- * 点击任意结果即复制到系统剪贴板,并关闭本页返回原来的应用。
+ * 搜索剪贴板历史与常用语,支持「全部 / 只在剪贴板历史中 / 只在常用语中」三种范围,
+ * 默认范围为「只在常用语中」。
+ * 点击任意结果即复制到系统剪贴板,并关闭本页返回原来的应用;
+ * 长按常用语结果可编辑/删除,长按剪贴板结果可删除。
  */
 class SearchActivity : Activity() {
 
     private lateinit var ds: DataStore
     private lateinit var queryEdit: EditText
     private lateinit var results: LinearLayout
-    private var scope = SCOPE_ALL
+    private var scope = SCOPE_PHRASE   // 打开搜索页时默认只搜常用语
     private val scopeChips = ArrayList<Pair<Int, TextView>>()   // 范围值 -> 按钮
     private var chosenText: String? = null                      // 选中并复制成功的文字,返回时插回原输入框
 
@@ -112,7 +116,12 @@ class SearchActivity : Activity() {
         updateScopeChips()
         results.removeAllViews()
         if (q.isEmpty()) {
-            results.addView(hint("输入关键词搜索剪贴板历史与常用语。\n点击搜索结果即可复制到剪贴板。"))
+            val tip = when (scope) {
+                SCOPE_PHRASE -> "输入关键词搜索常用语。\n点击结果即可复制到剪贴板,长按可编辑或删除。"
+                SCOPE_HISTORY -> "输入关键词搜索剪贴板历史。\n点击结果即可复制到剪贴板,长按可删除。"
+                else -> "输入关键词搜索剪贴板历史与常用语。\n点击结果即可复制到剪贴板,长按常用语可编辑或删除。"
+            }
+            results.addView(hint(tip))
             return
         }
         val terms = listOf(q)
@@ -129,7 +138,8 @@ class SearchActivity : Activity() {
         if (clips.isNotEmpty()) {
             results.addView(groupHeader("剪贴板历史 · ${clips.size}"))
             for (clip in clips) {
-                results.addView(resultRow("剪贴板历史", null, clip.content) {
+                results.addView(resultRow("剪贴板历史", null, clip.content,
+                    onLongClick = { showClipActions(clip) }) {
                     ds.touchClip(clip.uuid)   // 置顶到最近
                     copyAndClose(clip.content)
                 })
@@ -140,7 +150,8 @@ class SearchActivity : Activity() {
             for (p in phrases) {
                 val folder = p.folderUuid?.let { folderNames[it] }
                 val source = if (folder.isNullOrBlank()) "常用语" else "常用语 · $folder"
-                results.addView(resultRow(source, p.description, p.content) {
+                results.addView(resultRow(source, p.description, p.content,
+                    onLongClick = { showPhraseActions(p) }) {
                     ds.touchPhrase(p.uuid)
                     copyAndClose(p.content)
                 })
@@ -174,6 +185,79 @@ class SearchActivity : Activity() {
         chosenText?.let { PinyinImeService.pendingCommitText = it }
     }
 
+    /** 从编辑页返回时重新搜索,让被编辑的内容立刻反映到结果里。 */
+    override fun onResume() {
+        super.onResume()
+        render()
+    }
+
+    // ------------------------------------------------------------ 长按操作
+    /** 长按常用语结果:编辑 / 删除。 */
+    private fun showPhraseActions(p: DataStore.Phrase) {
+        AlertDialog.Builder(this)
+            .setTitle(oneLine(p.content))
+            .setItems(arrayOf("编辑", "删除")) { _, which ->
+                when (which) {
+                    0 -> editPhrase(p)
+                    else -> confirmDeletePhrase(p)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 长按剪贴板结果:只支持删除(剪贴板条目没有编辑入口)。 */
+    private fun showClipActions(clip: DataStore.Clip) {
+        AlertDialog.Builder(this)
+            .setTitle(oneLine(clip.content))
+            .setItems(arrayOf("删除")) { _, _ -> confirmDeleteClip(clip) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 跳到 [PhraseEditActivity] 编辑常用语;返回后由 onResume 重新搜索。 */
+    private fun editPhrase(p: DataStore.Phrase) {
+        startActivity(Intent(this, PhraseEditActivity::class.java).apply {
+            putExtra(PhraseEditActivity.EXTRA_MODE, PhraseEditActivity.MODE_EDIT_PHRASE)
+            putExtra(PhraseEditActivity.EXTRA_TITLE, "编辑常用语")
+            putExtra(PhraseEditActivity.EXTRA_FOLDER_UUID, p.folderUuid)
+            putExtra(PhraseEditActivity.EXTRA_PHRASE_UUID, p.uuid)
+            putExtra(PhraseEditActivity.EXTRA_MULTILINE, true)
+            putExtra(PhraseEditActivity.EXTRA_INITIAL, p.content)
+            putExtra(PhraseEditActivity.EXTRA_INITIAL_DESC, p.description)
+        })
+    }
+
+    private fun confirmDeletePhrase(p: DataStore.Phrase) {
+        AlertDialog.Builder(this)
+            .setTitle("删除常用语")
+            .setMessage("确定删除「${oneLine(p.content)}」?删除后无法恢复。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("删除") { _, _ ->
+                ds.deletePhrase(p.uuid)
+                render()
+            }
+            .show()
+    }
+
+    private fun confirmDeleteClip(clip: DataStore.Clip) {
+        AlertDialog.Builder(this)
+            .setTitle("删除剪贴板记录")
+            .setMessage("确定删除「${oneLine(clip.content)}」?删除后无法恢复。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("删除") { _, _ ->
+                ds.deleteClip(clip.uuid)
+                render()
+            }
+            .show()
+    }
+
+    /** 把多行文本压成一行并截断,用于对话框标题与提示。 */
+    private fun oneLine(s: String): String {
+        val flat = s.replace("\r\n", " ").replace('\n', ' ').trim()
+        return if (flat.length <= 20) flat else flat.take(20) + "…"
+    }
+
     private fun updateScopeChips() {
         for ((value, tv) in scopeChips) {
             val selected = value == scope
@@ -200,7 +284,13 @@ class SearchActivity : Activity() {
         }
     }.also { scopeChips.add(value to it) }
 
-    private fun resultRow(source: String, description: String?, content: String, onClick: () -> Unit): View {
+    private fun resultRow(
+        source: String,
+        description: String?,
+        content: String,
+        onLongClick: (() -> Unit)? = null,
+        onClick: () -> Unit,
+    ): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -210,6 +300,10 @@ class SearchActivity : Activity() {
             setPadding(dp(14), dp(10), dp(14), dp(10))
             isClickable = true
             setOnClickListener { onClick() }
+            if (onLongClick != null) {
+                isLongClickable = true
+                setOnLongClickListener { onLongClick(); true }
+            }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(8), dp(4), dp(8), dp(4)) }
