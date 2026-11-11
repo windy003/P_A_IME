@@ -34,13 +34,8 @@ FUZZY_PAIRS = [
 ]
 MAX_FUZZY_KEYS = 24  # 一次查询最多展开的模糊拼音组合数
 
-ENABLE_SHOUPIN = True  # 简拼:每个音节只打声母,如 zg->这个/中国、bj->北京、nh->你好
 MAX_SHOUPIN_PER_KEY = 10**9  # 每个声母串保留多少候选(按词频),极大值=不限制,全部保留
-
-ENABLE_SINGLE_INITIAL = True  # 单字母:打一个字母即列出所有该拼音首字母开头的词,按权重
 MAX_SINGLE_INITIAL_PER_KEY = 10**9  # 每个首字母保留多少候选(按词频),极大值=不限制,全部保留
-
-ENABLE_TAIL_INITIAL = True  # 末字简拼:前面音节全拼、最后一个字只打声母,如 sej->设计、jisuanj->计算机
 MAX_TAIL_INITIAL_PER_KEY = 10**9  # 每个「前缀+末声母」键保留多少候选(按词频),极大值=不限制,全部保留
 
 user32 = ctypes.windll.user32
@@ -616,46 +611,44 @@ class Dict:
             if len(group) > 1:
                 self.letter_fuzzy[c] = sorted(group - {c})
         # 简拼索引:声母串(每音节取首字母)-> [(词, 权重)],按词频降序、截断
+        # 如 zg->这个/中国、bj->北京、nh->你好
         self.abbr = {}
-        if ENABLE_SHOUPIN:
-            for py, words in self.table.items():
-                sylls = py.split(" ")
-                if len(sylls) < 2:
-                    continue  # 单字简拼只有一个字母,太歧义,不收
-                key = "".join(s[0] for s in sylls)
-                self.abbr.setdefault(key, []).extend(words)
-            for v in self.abbr.values():
-                v.sort(key=lambda x: -x[1])
-                del v[MAX_SHOUPIN_PER_KEY:]
+        for py, words in self.table.items():
+            sylls = py.split(" ")
+            if len(sylls) < 2:
+                continue  # 单字简拼只有一个字母,太歧义,不收
+            key = "".join(s[0] for s in sylls)
+            self.abbr.setdefault(key, []).extend(words)
+        for v in self.abbr.values():
+            v.sort(key=lambda x: -x[1])
+            del v[MAX_SHOUPIN_PER_KEY:]
         # 单字母索引:拼音首字母 -> [(词, 权重)],按词频降序、截断。
         # 用 py[0] 归桶,所以 "lao shi"=老师 也归在 'l' 下,zh/ch/sh 归在 z/c/s 下
         self.initial_idx = {}
-        if ENABLE_SINGLE_INITIAL:
-            for py, words in self.table.items():
-                c = py[0]
-                if c in _ABBR_LETTERS:
-                    self.initial_idx.setdefault(c, []).extend(words)
-            for v in self.initial_idx.values():
-                v.sort(key=lambda x: -x[1])
-                del v[MAX_SINGLE_INITIAL_PER_KEY:]
+        for py, words in self.table.items():
+            c = py[0]
+            if c in _ABBR_LETTERS:
+                self.initial_idx.setdefault(c, []).extend(words)
+        for v in self.initial_idx.values():
+            v.sort(key=lambda x: -x[1])
+            del v[MAX_SINGLE_INITIAL_PER_KEY:]
         # 部分简拼索引:前 p 个字全拼 + 末尾若干字只打声母。键=(前缀全拼, 末尾声母串)。
         # 如 你好吗 ni hao ma -> ("ni","hm") 和 ("ni hao","m");设计 she ji -> ("she","j")
         self.part_abbr = {}
-        if ENABLE_TAIL_INITIAL:
-            for py, words in self.table.items():
-                sylls = py.split(" ")
-                n = len(sylls)
-                if n < 2:
-                    continue
-                for p in range(1, n):  # 前 p 个全拼,后 n-p 个取声母
-                    inits = "".join(s[0] for s in sylls[p:])
-                    if not all(c in _INITIALS_1 for c in inits):
-                        continue  # 末尾有零声母音节(a/e/o 开头)时不能用声母简拼
-                    key = (" ".join(sylls[:p]), inits)
-                    self.part_abbr.setdefault(key, []).extend(words)
-            for v in self.part_abbr.values():
-                v.sort(key=lambda x: -x[1])
-                del v[MAX_TAIL_INITIAL_PER_KEY:]
+        for py, words in self.table.items():
+            sylls = py.split(" ")
+            n = len(sylls)
+            if n < 2:
+                continue
+            for p in range(1, n):  # 前 p 个全拼,后 n-p 个取声母
+                inits = "".join(s[0] for s in sylls[p:])
+                if not all(c in _INITIALS_1 for c in inits):
+                    continue  # 末尾有零声母音节(a/e/o 开头)时不能用声母简拼
+                key = (" ".join(sylls[:p]), inits)
+                self.part_abbr.setdefault(key, []).extend(words)
+        for v in self.part_abbr.values():
+            v.sort(key=lambda x: -x[1])
+            del v[MAX_TAIL_INITIAL_PER_KEY:]
 
     def _table_seg(self, buf):
         """整词优先:整串字母恰好拼成词库里某个词时,返回该词的音节切分,否则 None。
