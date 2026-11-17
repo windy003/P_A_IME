@@ -359,6 +359,49 @@ class PinyinDict(raw: String) {
     }
 
     /**
+     * 部分简拼选词(前缀全拼 + 末尾只打声母,如 sun'f、sej、jisuanj)反查该词真正的
+     * 完整拼音键。返回 (拼音键, 用于比较权重的候选池);找不到返回 null。
+     *
+     * 必须单独反查:按字面音节拼出来的 "sun f" 不是词库里的键,按全声母拼出来的
+     * "sunf" 也不是简拼键(真正的简拼是 "sf"),前两条反查都命中不了,调权会被直接跳过——
+     * 再打 sun'f 或 sf 都排不到最前面。
+     */
+    private fun lookupPartAbbr(word: String, sylls: List<String>): Pair<String, List<WordWeight>>? {
+        if (partAbbr.isEmpty() || sylls.size < 2) return null
+        val letters = sylls.joinToString("")
+        val pool = ArrayList<WordWeight>()
+        var found: String? = null
+        for (t in 1 until letters.length) {   // 末尾 t 个字母当作连续声母(与 addPartAbbr 一致)
+            val tail = letters.substring(letters.length - t)
+            if (!tail.all { it.toString() in INITIALS_1 }) break  // 末尾出现非声母字母,再往左也不可能全是声母
+            val pre = segment(letters.substring(0, letters.length - t))
+            if (!pre.all { it in syllables }) continue           // 前缀切不成完整音节
+            for (combo in fuzzyKeys(pre)) {
+                val bucket = partAbbr[combo to tail] ?: continue
+                pool.addAll(bucket)   // 同一输入可命中的桶都要纳入比较,否则赢不过别的模糊桶
+                if (found != null || bucket.none { it.word == word }) continue
+                val cs = combo.split(" ")
+                // 反查词的完整拼音键:音节数相符、前缀与模糊组合一致、末段声母串一致
+                for ((k, v) in table) {
+                    val ss = k.split(" ")
+                    if (ss.size == cs.size + tail.length &&
+                        ss.indices.all { i ->
+                            if (i < cs.size) ss[i] == cs[i] else ss[i][0] == tail[i - cs.size]
+                        } &&
+                        v.any { it.word == word }
+                    ) { found = k; break }
+                }
+            }
+        }
+        val target = found ?: return null
+        pool.addAll(table[target] ?: emptyList())
+        for (ak in abbrKeys(target.split(" ").joinToString("") { it[0].toString() })) {
+            abbr[ak]?.let { pool.addAll(it) }
+        }
+        return target to pool
+    }
+
+    /**
      * 选词调权:把选中词的权重提为同拼音候选池里的最大权重 + 1(内存立即生效)。
      * 返回需写回文件的 (拼音键, 新权重);已是唯一最高或找不到时返回 null。
      */
@@ -401,6 +444,9 @@ class PinyinDict(raw: String) {
                     ) { target = k; break }
                 }
             }
+        }
+        if (target == null) {   // 部分简拼选词(如 sun'f、sej):反查该词真正的完整拼音键
+            lookupPartAbbr(word, sylls)?.let { target = it.first; pool = it.second }
         }
         if (target == null && sylls.size == 1) {
             // 单字母选词(如打 s 出「是/说/上」):反查该字真正的拼音键。

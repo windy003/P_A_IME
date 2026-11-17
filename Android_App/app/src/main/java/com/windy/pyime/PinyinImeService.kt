@@ -916,11 +916,15 @@ class PinyinImeService : InputMethodService() {
     }
 
     // ---------------------------------------------------------------- 搜索
-    /** 打开全屏搜索页:搜索剪贴板历史与常用语,点击结果复制到系统剪贴板。 */
-    private fun openSearchActivity() {
+    /**
+     * 打开全屏搜索页:搜索剪贴板历史与常用语,点击结果复制到系统剪贴板。
+     * [scope] 为初始搜索范围;null 时用搜索页的默认值(只在常用语中)。
+     */
+    private fun openSearchActivity(scope: Int? = null) {
         if (buf.isNotEmpty()) { commitText(buf.replace("'", "")); clearBuf() }
         startActivity(android.content.Intent(this, SearchActivity::class.java).apply {
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (scope != null) putExtra(SearchActivity.EXTRA_SCOPE, scope)
         })
     }
 
@@ -940,12 +944,16 @@ class PinyinImeService : InputMethodService() {
             )
         }
 
-        // 顶部 Tab 行:剪贴板 / 常用语 / 返回键盘(比普通键位行矮,给内容区多留空间)
+        // 顶部 Tab 行:剪贴板 / 常用语 / 搜索 / 同步 / 返回键盘(比普通键位行矮,给内容区多留空间)
         val tabRow = newRow()
         clipTabKey = makeKey("剪贴板", 2f, heightDp = TOOL_TAB_ROW_HEIGHT, textSizeSp = 15f) { toolTab = TAB_CLIP; currentFolder = null; renderPanel() }
         phraseTabKey = makeKey("常用语", 2f, heightDp = TOOL_TAB_ROW_HEIGHT, textSizeSp = 15f) { toolTab = TAB_PHRASE; currentFolder = null; renderPanel() }
         tabRow.addView(clipTabKey)
         tabRow.addView(phraseTabKey)
+        // 搜索:按当前 Tab 预选搜索范围(剪贴板面板 -> 只搜剪贴板,常用语面板 -> 只搜常用语)
+        tabRow.addView(makeKey("🔍", 1.4f, heightDp = TOOL_TAB_ROW_HEIGHT, textSizeSp = 15f) {
+            openSearchActivity(if (toolTab == TAB_CLIP) SearchActivity.SCOPE_HISTORY else SearchActivity.SCOPE_PHRASE)
+        })
         tabRow.addView(makeKey("☁", 1.4f, heightDp = TOOL_TAB_ROW_HEIGHT, textSizeSp = 15f) {
             // 从工具面板进同步页:记下当前 Tab/文件夹,返回外部输入框时自动重开本面板
             pendingReopenPanel = true

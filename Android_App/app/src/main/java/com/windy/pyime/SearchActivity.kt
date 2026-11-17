@@ -44,6 +44,8 @@ class SearchActivity : Activity() {
         super.onCreate(savedInstanceState)
         title = "搜索"
         ds = DataStore(this)
+        // 由工具面板(剪贴板/常用语)打开时可指定初始范围;工具条搜索按钮不带,用默认的「常用语」
+        scope = intent.getIntExtra(EXTRA_SCOPE, SCOPE_PHRASE)
         // 打开搜索页时清掉可能残留的待插入文字(正常流程在返回原输入框时就已被消费)
         PinyinImeService.pendingCommitText = null
 
@@ -357,6 +359,9 @@ class SearchActivity : Activity() {
         const val SCOPE_ALL = 0       // 全部(剪贴板历史 + 常用语)
         const val SCOPE_HISTORY = 1   // 只在剪贴板历史中
         const val SCOPE_PHRASE = 2    // 只在常用语中
+
+        /** 初始搜索范围的 Intent extra;缺省为 [SCOPE_PHRASE]。 */
+        const val EXTRA_SCOPE = "search_scope"
 
         private val COL_BG = Color.parseColor("#F2F3F5")
         private val COL_BLUE = Color.parseColor("#4A90D9")
