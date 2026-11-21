@@ -29,7 +29,7 @@ import android.widget.Toast
  * 搜索剪贴板历史与常用语,支持「全部 / 只在剪贴板历史中 / 只在常用语中」三种范围,
  * 默认范围为「只在常用语中」。
  * 点击任意结果即复制到系统剪贴板,并关闭本页返回原来的应用;
- * 长按常用语结果可编辑/删除,长按剪贴板结果可删除。
+ * 长按结果可在弹窗里「复制到剪贴板」(只复制、不关页),常用语还可编辑/删除,剪贴板条目还可删除。
  */
 class SearchActivity : Activity() {
 
@@ -119,9 +119,9 @@ class SearchActivity : Activity() {
         results.removeAllViews()
         if (q.isEmpty()) {
             val tip = when (scope) {
-                SCOPE_PHRASE -> "输入关键词搜索常用语。\n点击结果即可复制到剪贴板,长按可编辑或删除。"
-                SCOPE_HISTORY -> "输入关键词搜索剪贴板历史。\n点击结果即可复制到剪贴板,长按可删除。"
-                else -> "输入关键词搜索剪贴板历史与常用语。\n点击结果即可复制到剪贴板,长按常用语可编辑或删除。"
+                SCOPE_PHRASE -> "输入关键词搜索常用语。\n点击结果即可复制并插入原输入框,长按可复制、编辑或删除。"
+                SCOPE_HISTORY -> "输入关键词搜索剪贴板历史。\n点击结果即可复制并插入原输入框,长按可复制或删除。"
+                else -> "输入关键词搜索剪贴板历史与常用语。\n点击结果即可复制并插入原输入框,长按可复制,常用语还可编辑或删除。"
             }
             results.addView(hint(tip))
             return
@@ -194,13 +194,14 @@ class SearchActivity : Activity() {
     }
 
     // ------------------------------------------------------------ 长按操作
-    /** 长按常用语结果:编辑 / 删除。 */
+    /** 长按常用语结果:复制到剪贴板 / 编辑 / 删除。 */
     private fun showPhraseActions(p: DataStore.Phrase) {
         AlertDialog.Builder(this)
             .setTitle(oneLine(p.content))
-            .setItems(arrayOf("编辑", "删除")) { _, which ->
+            .setItems(arrayOf("复制到剪贴板", "编辑", "删除")) { _, which ->
                 when (which) {
-                    0 -> editPhrase(p)
+                    0 -> copyOnly(p.content) { ds.touchPhrase(p.uuid) }
+                    1 -> editPhrase(p)
                     else -> confirmDeletePhrase(p)
                 }
             }
@@ -208,13 +209,34 @@ class SearchActivity : Activity() {
             .show()
     }
 
-    /** 长按剪贴板结果:只支持删除(剪贴板条目没有编辑入口)。 */
+    /** 长按剪贴板结果:复制到剪贴板 / 删除(剪贴板条目没有编辑入口)。 */
     private fun showClipActions(clip: DataStore.Clip) {
         AlertDialog.Builder(this)
             .setTitle(oneLine(clip.content))
-            .setItems(arrayOf("删除")) { _, _ -> confirmDeleteClip(clip) }
+            .setItems(arrayOf("复制到剪贴板", "删除")) { _, which ->
+                when (which) {
+                    0 -> copyOnly(clip.content) { ds.touchClip(clip.uuid) }
+                    else -> confirmDeleteClip(clip)
+                }
+            }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 只复制到系统剪贴板,不关闭本页(便于连续复制多条);[onCopied] 用于把条目置顶到最近。 */
+    private fun copyOnly(text: String, onCopied: () -> Unit = {}) {
+        try {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("PyIME", text))
+        } catch (e: Exception) {
+            Toast.makeText(this, "复制失败", Toast.LENGTH_SHORT).show()
+            return
+        }
+        onCopied()
+        // Android 13+ 系统会自己弹出复制提示,不再额外 Toast
+        if (Build.VERSION.SDK_INT < 33) {
+            Toast.makeText(this, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** 跳到 [PhraseEditActivity] 编辑常用语;返回后由 onResume 重新搜索。 */
